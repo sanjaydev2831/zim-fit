@@ -1,14 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { dayLabel } from '../data/program'
+import {
+  attendanceLabel,
+  formatDayMonth,
+  formatWeekday,
+  getSessionDate,
+} from '../data/calendar'
 import { formatDayType } from '../data/labels'
 import { useProgressContext } from '../context/ProgressContext'
 import { DifficultyMeter } from '../components/Layout'
 
 export function ProgramPage() {
-  const { state, program, isComplete, jumpTo } = useProgressContext()
-  const [week, setWeek] = useState(state.currentWeek || 1)
+  const { state, program, todayPosition, getDayAttendance, jumpTo } = useProgressContext()
+  const [week, setWeek] = useState(todayPosition.week || 1)
   const plan = program.find((w) => w.week === week)
+
+  useEffect(() => {
+    setWeek(todayPosition.week || 1)
+  }, [todayPosition.week])
 
   if (!state.profile) {
     return (
@@ -30,19 +39,20 @@ export function ProgramPage() {
         <div className="section-head">
           <h1 className="display">12-week map</h1>
           <p>
-            Difficulty rises by phase. Tap a week, open any day, train with full cues — then log it
-            done.
+            Days follow your real start date calendar. Missed (not attended) days show in gray —
+            today is highlighted from the live date.
           </p>
         </div>
 
         <div className="week-strip">
           {program.map((w) => {
-            const done = w.sessions.every((s) => isComplete(s.id) || s.dayType === 'rest')
+            const missed = w.sessions.some((s) => getDayAttendance(s) === 'missed')
+            const allDone = w.sessions.every((s) => getDayAttendance(s) === 'completed')
             return (
               <button
                 key={w.week}
                 type="button"
-                className={`week-pill ${week === w.week ? 'active' : ''} ${done ? 'done' : ''}`}
+                className={`week-pill ${week === w.week ? 'active' : ''} ${allDone ? 'done' : ''} ${missed ? 'has-missed' : ''}`}
                 onClick={() => setWeek(w.week)}
               >
                 {w.week}
@@ -70,23 +80,33 @@ export function ProgramPage() {
             </div>
 
             <div className="day-list" style={{ marginTop: '1rem' }}>
-              {plan.sessions.map((s) => (
-                <Link
-                  key={s.id}
-                  to={`/workout/${s.week}/${s.day}`}
-                  className={`day-row ${isComplete(s.id) ? 'done' : ''}`}
-                  onClick={() => jumpTo(s.week, s.day)}
-                >
-                  <span className="dow">{dayLabel(s.day)}</span>
-                  <div>
-                    <strong>{s.title}</strong>
-                    <div className="muted" style={{ fontSize: '0.85rem' }}>
-                      {s.durationMin > 0 ? `${s.durationMin} min` : 'Off day'}
+              {plan.sessions.map((s) => {
+                const status = getDayAttendance(s)
+                const date = getSessionDate(state.profile!.startDate, s.week, s.day)
+                return (
+                  <Link
+                    key={s.id}
+                    to={`/workout/${s.week}/${s.day}`}
+                    className={`day-row ${status}`}
+                    onClick={() => jumpTo(s.week, s.day)}
+                  >
+                    <span className="dow">
+                      <strong>{formatWeekday(date)}</strong>
+                      <small>{formatDayMonth(date)}</small>
+                    </span>
+                    <div>
+                      <strong>{s.title}</strong>
+                      <div className="muted" style={{ fontSize: '0.85rem' }}>
+                        {attendanceLabel(status, s.dayType)}
+                        {s.durationMin > 0 ? ` · ${s.durationMin} min` : ''}
+                      </div>
                     </div>
-                  </div>
-                  <span className={`badge ${s.dayType}`}>{formatDayType(s.dayType)}</span>
-                </Link>
-              ))}
+                    <span className={`badge ${status === 'missed' ? 'missed' : s.dayType}`}>
+                      {status === 'missed' ? 'Missed' : formatDayType(s.dayType)}
+                    </span>
+                  </Link>
+                )
+              })}
             </div>
           </>
         )}

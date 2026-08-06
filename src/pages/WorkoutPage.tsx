@@ -1,6 +1,11 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getExercise } from '../data/exercises'
 import {
+  attendanceLabel,
+  formatCalendarDate,
+  getSessionDate,
+} from '../data/calendar'
+import {
   expandAbbreviations,
   formatDayType,
   formatFocus,
@@ -8,7 +13,7 @@ import {
   formatRpe,
   glossary,
 } from '../data/labels'
-import { dayLabel, getSession } from '../data/program'
+import { getSession } from '../data/program'
 import { getSuggestedWeight } from '../data/weights'
 import { useProgressContext } from '../context/ProgressContext'
 
@@ -16,7 +21,7 @@ export function WorkoutPage() {
   const { week = '1', day = '1' } = useParams()
   const w = Number(week)
   const d = Number(day)
-  const { program, completeSession, isComplete, state } = useProgressContext()
+  const { program, completeSession, isComplete, state, getDayAttendance } = useProgressContext()
   const navigate = useNavigate()
   const session = getSession(program, w, d)
   const level = state.profile?.level ?? 'beginner'
@@ -35,9 +40,13 @@ export function WorkoutPage() {
   }
 
   const done = isComplete(session.id)
+  const attendance = state.profile ? getDayAttendance(session) : 'upcoming'
+  const sessionDate = state.profile
+    ? getSessionDate(state.profile.startDate, session.week, session.day)
+    : null
 
   function finish() {
-    completeSession(session!.id, session!.week, session!.day)
+    completeSession(session!.id)
     navigate('/train')
   }
 
@@ -45,16 +54,26 @@ export function WorkoutPage() {
     <section className="section" style={{ paddingTop: '1.5rem' }}>
       <div className="container">
         <p className="muted" style={{ margin: 0 }}>
-          Week {session.week} · {dayLabel(session.day)}
+          Week {session.week}
+          {sessionDate ? ` · ${formatCalendarDate(sessionDate)}` : ''}
           {state.profile ? ` · ${state.profile.level}` : ''}
         </p>
         <div className="workout-header">
           <h1 className="display">{session.title}</h1>
           <div className="meta-row">
-            <span className={`badge ${session.dayType}`}>{formatDayType(session.dayType)}</span>
+            <span className={`badge ${attendance === 'missed' ? 'missed' : session.dayType}`}>
+              {attendance === 'missed' ? 'Missed' : formatDayType(session.dayType)}
+            </span>
+            <span className={`badge ${attendance}`}>{attendanceLabel(attendance, session.dayType)}</span>
             {session.durationMin > 0 && <span>~{session.durationMin} minutes</span>}
             <span>{formatFocus(session.focus)}</span>
           </div>
+          {attendance === 'missed' && (
+            <p className="caution" style={{ marginTop: 0 }}>
+              This calendar day passed without a log. You can still complete it late, or move on to
+              today&apos;s session.
+            </p>
+          )}
           <p className="trainer-brief">{expandAbbreviations(session.trainerBrief)}</p>
         </div>
 

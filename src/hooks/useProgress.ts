@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FocusGuideId, FocusGuideProgress } from '../data/focusGuides'
+import { getAttendance, getProgramPosition } from '../data/calendar'
 import type { ExperienceLevel, ProgressState, UserProfile } from '../data/types'
 import { buildProgram } from '../data/program'
 
-const STORAGE_KEY = 'zim-fit-progress-v4'
+const STORAGE_KEY = 'zim-fit-progress-v5'
 
 const defaultState: ProgressState = {
   profile: null,
@@ -17,9 +18,9 @@ function load(): ProgressState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
-      localStorage.removeItem('zim-fit-progress-v3')
-      localStorage.removeItem('zim-fit-progress-v2')
-      localStorage.removeItem('zim-fit-progress-v1')
+      ;['zim-fit-progress-v4', 'zim-fit-progress-v3', 'zim-fit-progress-v2', 'zim-fit-progress-v1'].forEach(
+        (k) => localStorage.removeItem(k),
+      )
       return defaultState
     }
     const parsed = JSON.parse(raw) as ProgressState
@@ -37,10 +38,20 @@ export function useProgress() {
   const [state, setState] = useState<ProgressState>(() =>
     typeof window === 'undefined' ? defaultState : load(),
   )
+  const [todayTick, setTodayTick] = useState(() => new Date().toDateString())
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }, [state])
+
+  // Refresh "today" if the tab stays open past midnight
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const next = new Date().toDateString()
+      setTodayTick((prev) => (prev === next ? prev : next))
+    }, 60_000)
+    return () => window.clearInterval(id)
+  }, [])
 
   const program = useMemo(
     () =>
@@ -58,35 +69,41 @@ export function useProgress() {
     ],
   )
 
+  const calendarToday = useMemo(() => new Date(todayTick), [todayTick])
+
+  const todayPosition = useMemo(() => {
+    if (!state.profile?.startDate) return { week: 1, day: 1, inProgram: false }
+    return getProgramPosition(state.profile.startDate, calendarToday)
+  }, [state.profile?.startDate, calendarToday])
+
   const start = useCallback((profile: Omit<UserProfile, 'startDate'> & { startDate?: string }) => {
+    const startDate = profile.startDate ?? new Date().toISOString()
+    const pos = getProgramPosition(startDate, new Date())
     setState((prev) => ({
       profile: {
         ...profile,
-        startDate: profile.startDate ?? new Date().toISOString(),
+        startDate,
       },
       completedSessionIds: [],
-      currentWeek: 1,
-      currentDay: 1,
+      currentWeek: pos.week,
+      currentDay: pos.day,
       focusGuides: prev.focusGuides,
     }))
   }, [])
 
-  const completeSession = useCallback((sessionId: string, week: number, day: number) => {
+  const completeSession = useCallback((sessionId: string) => {
     setState((prev) => {
       const completed = prev.completedSessionIds.includes(sessionId)
         ? prev.completedSessionIds
         : [...prev.completedSessionIds, sessionId]
-      let nextWeek = week
-      let nextDay = day + 1
-      if (nextDay > 7) {
-        nextDay = 1
-        nextWeek = Math.min(12, week + 1)
-      }
+      const pos = prev.profile?.startDate
+        ? getProgramPosition(prev.profile.startDate, new Date())
+        : { week: prev.currentWeek, day: prev.currentDay }
       return {
         ...prev,
         completedSessionIds: completed,
-        currentWeek: nextWeek,
-        currentDay: nextDay,
+        currentWeek: pos.week,
+        currentDay: pos.day,
       }
     })
   }, [])
@@ -132,7 +149,14 @@ export function useProgress() {
   }, [])
 
   const completeFocusSession = useCallback(
-    (guideId: FocusGuideId, sessionId: string, week: number, sessionNum: number, sessionsPerWeek: number, totalWeeks: number) => {
+    (
+      guideId: FocusGuideId,
+      sessionId: string,
+      week: number,
+      sessionNum: number,
+      sessionsPerWeek: number,
+      totalWeeks: number,
+    ) => {
       setState((prev) => ({
         ...prev,
         focusGuides: prev.focusGuides.map((g) => {
@@ -166,9 +190,17 @@ export function useProgress() {
     [state.focusGuides],
   )
 
-  const currentWeekPlan = program.find((w) => w.week === state.currentWeek)
-  const currentSession = currentWeekPlan?.sessions.find((s) => s.day === state.currentDay)
+  const currentWeekPlan = program.find((w) => w.week === todayPosition.week)
+  const currentSession = currentWeekPlan?.sessions.find((s) => s.day === todayPosition.day)
   const completedCount = state.completedSessionIds.length
+
+  const getDayAttendance = useCallback(
+    (session: Parameters<typeof getAttendance>[0]) => {
+      if (!state.profile?.startDate) return 'upcoming' as const
+      return getAttendance(session, state.profile.startDate, state.completedSessionIds, calendarToday)
+    },
+    [state.profile?.startDate, state.completedSessionIds, calendarToday],
+  )
 
   return {
     state,
@@ -176,6 +208,8 @@ export function useProgress() {
     currentWeekPlan,
     currentSession,
     completedCount,
+    calendarToday,
+    todayPosition,
     start,
     completeSession,
     jumpTo,
@@ -185,6 +219,7 @@ export function useProgress() {
     removeFocusGuide,
     completeFocusSession,
     isFocusComplete,
+    getDayAttendance,
     isComplete: (id: string) => state.completedSessionIds.includes(id),
   }
 }

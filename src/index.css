@@ -472,6 +472,106 @@ h3 {
   font-weight: 800;
   font-size: 0.8rem;
   color: var(--accent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  line-height: 1.1;
+}
+
+.day-row .dow small {
+  font-weight: 600;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.day-row.today,
+.day-row.current.today {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.day-row.completed,
+.day-row.done {
+  opacity: 0.72;
+}
+
+.day-row.missed {
+  opacity: 0.55;
+  filter: grayscale(0.85);
+  background: #141816;
+  border-color: rgba(140, 140, 140, 0.25);
+  color: #9aa19b;
+}
+
+.day-row.missed .dow,
+.day-row.missed .dow strong,
+.day-row.missed .accent {
+  color: #8b968f;
+}
+
+.day-row.upcoming {
+  opacity: 0.92;
+}
+
+.badge.missed {
+  background: rgba(120, 120, 120, 0.2);
+  color: #b0b8b2;
+}
+
+.badge.today {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.badge.completed {
+  background: rgba(93, 222, 166, 0.15);
+  color: var(--ok);
+}
+
+.badge.upcoming {
+  color: var(--muted);
+}
+
+.legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.25rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.legend-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend-row .dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-row .dot.today {
+  background: var(--accent);
+}
+.legend-row .dot.done {
+  background: var(--ok);
+}
+.legend-row .dot.missed {
+  background: #6f776f;
+}
+.legend-row .dot.upcoming {
+  background: #3a433d;
+  border: 1px solid var(--line);
+}
+
+.week-pill.has-missed:not(.active) {
+  outline: 1px solid rgba(140, 140, 140, 0.45);
 }
 
 .badge {

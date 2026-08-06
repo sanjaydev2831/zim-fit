@@ -1,13 +1,28 @@
 import { Link } from 'react-router-dom'
-import { dayLabel } from '../data/program'
+import {
+  attendanceLabel,
+  formatCalendarDate,
+  formatDayMonth,
+  formatWeekday,
+  getSessionDate,
+} from '../data/calendar'
 import { formatDayType, formatFocus } from '../data/labels'
 import { focusGuideCatalog } from '../data/focusGuides'
 import { useProgressContext } from '../context/ProgressContext'
 import { DifficultyMeter } from '../components/Layout'
 
 export function TrainPage() {
-  const { state, currentWeekPlan, currentSession, completedCount, isComplete, jumpTo, reset } =
-    useProgressContext()
+  const {
+    state,
+    currentWeekPlan,
+    currentSession,
+    completedCount,
+    todayPosition,
+    calendarToday,
+    getDayAttendance,
+    jumpTo,
+    reset,
+  } = useProgressContext()
 
   if (!state.profile) {
     return (
@@ -25,7 +40,8 @@ export function TrainPage() {
 
   const week = currentWeekPlan
   const session = currentSession
-  const progressPct = Math.min(100, Math.round((completedCount / 60) * 100))
+  const progressPct = Math.min(100, Math.round((completedCount / 84) * 100))
+  const todayLabel = formatCalendarDate(calendarToday)
 
   return (
     <section className="section">
@@ -36,16 +52,22 @@ export function TrainPage() {
             {state.profile.medicalClearanceNeeded ? ' · clearance recommended before hard training' : ''}
           </p>
           <h1 className="display">Today&apos;s plan</h1>
+          <p className="muted" style={{ margin: '0.35rem 0 0' }}>
+            {todayLabel}
+            {todayPosition.inProgram
+              ? ` · Program week ${todayPosition.week}, day ${todayPosition.day}`
+              : ' · Outside the 12-week calendar window'}
+          </p>
         </div>
 
         <div className="stat-inline">
           <div>
-            <strong>W{state.currentWeek}</strong>
-            <span>Current week</span>
+            <strong>W{todayPosition.week}</strong>
+            <span>Calendar week</span>
           </div>
           <div>
             <strong>{state.profile.daysPerWeek}×</strong>
-            <span>Days / week</span>
+            <span>Train days / week</span>
           </div>
           <div>
             <strong>{state.profile.sessionDuration}m</strong>
@@ -59,6 +81,21 @@ export function TrainPage() {
 
         <div className="progress-bar" aria-hidden>
           <span style={{ width: `${progressPct}%` }} />
+        </div>
+
+        <div className="legend-row">
+          <span>
+            <i className="dot today" /> Today
+          </span>
+          <span>
+            <i className="dot done" /> Completed
+          </span>
+          <span>
+            <i className="dot missed" /> Missed / not attended
+          </span>
+          <span>
+            <i className="dot upcoming" /> Upcoming
+          </span>
         </div>
 
         {week && (
@@ -84,15 +121,18 @@ export function TrainPage() {
         {session && (
           <Link
             to={`/workout/${session.week}/${session.day}`}
-            className={`day-row current`}
+            className={`day-row current ${getDayAttendance(session)}`}
             style={{ marginBottom: '1.5rem' }}
           >
-            <span className="dow">{dayLabel(session.day)}</span>
+            <span className="dow">
+              <strong>{formatWeekday(getSessionDate(state.profile.startDate, session.week, session.day))}</strong>
+              <small>{formatDayMonth(getSessionDate(state.profile.startDate, session.week, session.day))}</small>
+            </span>
             <div>
               <strong>{session.title}</strong>
               <div className="muted" style={{ fontSize: '0.85rem' }}>
                 {session.durationMin > 0 ? `${session.durationMin} min` : 'Recovery day'} ·{' '}
-                {formatFocus(session.focus)}
+                {formatFocus(session.focus)} · {attendanceLabel(getDayAttendance(session), session.dayType)}
               </div>
             </div>
             <span className={`badge ${session.dayType}`}>{formatDayType(session.dayType)}</span>
@@ -100,26 +140,38 @@ export function TrainPage() {
         )}
 
         <h3 style={{ fontFamily: 'var(--font-body)', fontWeight: 800, marginBottom: '0.75rem' }}>
-          This week
+          This calendar week
         </h3>
         <div className="day-list">
-          {week?.sessions.map((s) => (
-            <Link
-              key={s.id}
-              to={`/workout/${s.week}/${s.day}`}
-              className={`day-row ${s.day === state.currentDay ? 'current' : ''} ${isComplete(s.id) ? 'done' : ''}`}
-              onClick={() => jumpTo(s.week, s.day)}
-            >
-              <span className="dow">{dayLabel(s.day)}</span>
-              <div>
-                <strong>{s.title}</strong>
-                <div className="muted" style={{ fontSize: '0.85rem' }}>
-                  {isComplete(s.id) ? 'Completed' : s.trainerBrief.slice(0, 72) + '…'}
+          {week?.sessions.map((s) => {
+            const status = getDayAttendance(s)
+            const date = getSessionDate(state.profile!.startDate, s.week, s.day)
+            return (
+              <Link
+                key={s.id}
+                to={`/workout/${s.week}/${s.day}`}
+                className={`day-row ${status}`}
+                onClick={() => jumpTo(s.week, s.day)}
+              >
+                <span className="dow">
+                  <strong>{formatWeekday(date)}</strong>
+                  <small>{formatDayMonth(date)}</small>
+                </span>
+                <div>
+                  <strong>{s.title}</strong>
+                  <div className="muted" style={{ fontSize: '0.85rem' }}>
+                    {attendanceLabel(status, s.dayType)}
+                    {status === 'upcoming' || status === 'today'
+                      ? ` · ${s.durationMin > 0 ? `${s.durationMin} min` : 'off'}`
+                      : ''}
+                  </div>
                 </div>
-              </div>
-              <span className={`badge ${s.dayType}`}>{formatDayType(s.dayType)}</span>
-            </Link>
-          ))}
+                <span className={`badge ${status === 'missed' ? 'missed' : s.dayType}`}>
+                  {status === 'missed' ? 'Missed' : formatDayType(s.dayType)}
+                </span>
+              </Link>
+            )
+          })}
         </div>
 
         {state.focusGuides.length > 0 && (
