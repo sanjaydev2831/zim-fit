@@ -456,12 +456,20 @@ function scheduleTrainDays(daysPerWeek: DaysPerWeek): TrainFactory[] {
   }
 }
 
-function trainingDayNumbers(daysPerWeek: DaysPerWeek): number[] {
+function trainingDayNumbers(
+  daysPerWeek: DaysPerWeek,
+  restWeekdays?: number[],
+): number[] {
+  if (restWeekdays && restWeekdays.length === 7 - daysPerWeek) {
+    const rest = new Set(restWeekdays)
+    return [1, 2, 3, 4, 5, 6, 7].filter((d) => !rest.has(d))
+  }
+  // Fallback defaults if profile is missing custom rest days
   const map: Record<DaysPerWeek, number[]> = {
     2: [1, 4],
     3: [1, 3, 5],
     4: [1, 2, 4, 5],
-    5: [1, 2, 3, 5, 6],
+    5: [1, 2, 3, 4, 5],
     6: [1, 2, 3, 4, 5, 6],
   }
   return map[daysPerWeek]
@@ -473,10 +481,11 @@ function buildWeek(
   daysPerWeek: DaysPerWeek,
   available: EquipmentId[],
   duration: SessionDuration,
+  restWeekdays?: number[],
 ): WeekPlan {
   const meta = phaseMeta(week, daysPerWeek, duration)
   const trainFactories = scheduleTrainDays(daysPerWeek)
-  const trainDays = trainingDayNumbers(daysPerWeek)
+  const trainDays = trainingDayNumbers(daysPerWeek, restWeekdays)
   const trainSet = new Set(trainDays)
   const sessions: Session[] = []
   let trainIdx = 0
@@ -485,11 +494,8 @@ function buildWeek(
     if (trainSet.has(day)) {
       const factory = trainFactories[trainIdx++]!
       sessions.push(finalize(factory(week, day, level), available, duration))
-    } else if (day === 7 || daysPerWeek >= 5) {
-      sessions.push(recovery(week, day, 'rest'))
-    } else if ([2, 4, 6].includes(day) && daysPerWeek <= 4) {
-      sessions.push(finalize(recovery(week, day, 'active'), available, 30))
     } else {
+      // User-chosen rest day — full rest (any weekday, not necessarily consecutive)
       sessions.push(recovery(week, day, 'rest'))
     }
   }
@@ -502,9 +508,10 @@ export function buildProgram(
   daysPerWeek: DaysPerWeek = 3,
   availableEquipment: EquipmentId[] = [],
   sessionDuration: SessionDuration = 45,
+  restWeekdays?: number[],
 ): WeekPlan[] {
   return Array.from({ length: 12 }, (_, i) =>
-    buildWeek(i + 1, level, daysPerWeek, availableEquipment, sessionDuration),
+    buildWeek(i + 1, level, daysPerWeek, availableEquipment, sessionDuration, restWeekdays),
   )
 }
 

@@ -5,6 +5,7 @@ import {
   formatDayMonth,
   formatWeekday,
   getSessionDate,
+  weeklyRestBlurb,
 } from '../data/calendar'
 import { formatDayType, formatFocus } from '../data/labels'
 import { focusGuideCatalog } from '../data/focusGuides'
@@ -21,7 +22,6 @@ export function TrainPage() {
     calendarToday,
     getDayAttendance,
     jumpTo,
-    reset,
   } = useProgressContext()
 
   if (!state.profile) {
@@ -42,6 +42,9 @@ export function TrainPage() {
   const session = currentSession
   const progressPct = Math.min(100, Math.round((completedCount / 84) * 100))
   const todayLabel = formatCalendarDate(calendarToday)
+  const isProgrammedRest =
+    Boolean(session) && (session!.dayType === 'rest' || session!.dayType === 'active_recovery')
+  const weeklyRest = weeklyRestBlurb(state.profile.restWeekdays ?? [])
 
   return (
     <section className="section">
@@ -55,27 +58,32 @@ export function TrainPage() {
           <p className="muted" style={{ margin: '0.35rem 0 0' }}>
             {todayLabel}
             {todayPosition.inProgram
-              ? ` · Program week ${todayPosition.week}, day ${todayPosition.day}`
+              ? ` · Week ${todayPosition.week} · ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][todayPosition.day - 1]}`
               : ' · Outside the 12-week calendar window'}
+          </p>
+          <p className="accent" style={{ margin: '0.35rem 0 0', fontSize: '0.92rem', fontWeight: 700 }}>
+            {weeklyRest}
           </p>
         </div>
 
         <div className="stat-inline">
           <div>
             <strong>W{todayPosition.week}</strong>
-            <span>Calendar week</span>
+            <span>Program week</span>
           </div>
           <div>
             <strong>{state.profile.daysPerWeek}×</strong>
             <span>Train days / week</span>
           </div>
           <div>
-            <strong>{state.profile.sessionDuration}m</strong>
-            <span>Session length</span>
+            <strong>
+              {state.profile.heightCm}/{state.profile.weightKg}
+            </strong>
+            <span>cm / kg</span>
           </div>
           <div>
-            <strong>{state.profile.availableEquipment.length}</strong>
-            <span>Gear selected</span>
+            <strong>{state.profile.sessionDuration}m</strong>
+            <span>Session length</span>
           </div>
         </div>
 
@@ -91,7 +99,10 @@ export function TrainPage() {
             <i className="dot done" /> Completed
           </span>
           <span>
-            <i className="dot missed" /> Missed / not attended
+            <i className="dot rested" /> Rest day
+          </span>
+          <span>
+            <i className="dot missed" /> Incomplete
           </span>
           <span>
             <i className="dot upcoming" /> Upcoming
@@ -118,29 +129,49 @@ export function TrainPage() {
           </div>
         )}
 
-        {session && (
-          <Link
-            to={`/workout/${session.week}/${session.day}`}
-            className={`day-row current ${getDayAttendance(session)}`}
-            style={{ marginBottom: '1.5rem' }}
-          >
-            <span className="dow">
-              <strong>{formatWeekday(getSessionDate(state.profile.startDate, session.week, session.day))}</strong>
-              <small>{formatDayMonth(getSessionDate(state.profile.startDate, session.week, session.day))}</small>
-            </span>
-            <div>
-              <strong>{session.title}</strong>
-              <div className="muted" style={{ fontSize: '0.85rem' }}>
-                {session.durationMin > 0 ? `${session.durationMin} min` : 'Recovery day'} ·{' '}
-                {formatFocus(session.focus)} · {attendanceLabel(getDayAttendance(session), session.dayType)}
+        {isProgrammedRest ? (
+          <div className="panel rest-today-panel" style={{ marginBottom: '1.5rem' }}>
+            <h2 className="display" style={{ fontSize: '2.4rem', marginBottom: '0.35rem' }}>
+              Rest day
+            </h2>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Scheduled rest ({weeklyRest}). Recover well and come back on your next train day.
+            </p>
+            {session && (
+              <Link className="btn btn-ghost" to={`/workout/${session.week}/${session.day}`} style={{ marginTop: 12 }}>
+                View recovery notes
+              </Link>
+            )}
+          </div>
+        ) : (
+          session && (
+            <Link
+              to={`/workout/${session.week}/${session.day}`}
+              className={`day-row current ${getDayAttendance(session)}`}
+              style={{ marginBottom: '1rem' }}
+            >
+              <span className="dow">
+                <strong>
+                  {formatWeekday(getSessionDate(state.profile.startDate, session.week, session.day))}
+                </strong>
+                <small>
+                  {formatDayMonth(getSessionDate(state.profile.startDate, session.week, session.day))}
+                </small>
+              </span>
+              <div>
+                <strong>{session.title}</strong>
+                <div className="muted" style={{ fontSize: '0.85rem' }}>
+                  {session.durationMin > 0 ? `${session.durationMin} min` : 'Recovery day'} ·{' '}
+                  {formatFocus(session.focus)} · {attendanceLabel(getDayAttendance(session), session.dayType)}
+                </div>
               </div>
-            </div>
-            <span className={`badge ${session.dayType}`}>{formatDayType(session.dayType)}</span>
-          </Link>
+              <span className={`badge ${session.dayType}`}>{formatDayType(session.dayType)}</span>
+            </Link>
+          )
         )}
 
         <h3 style={{ fontFamily: 'var(--font-body)', fontWeight: 800, marginBottom: '0.75rem' }}>
-          This calendar week
+          This week (Mon–Sun)
         </h3>
         <div className="day-list">
           {week?.sessions.map((s) => {
@@ -166,8 +197,16 @@ export function TrainPage() {
                       : ''}
                   </div>
                 </div>
-                <span className={`badge ${status === 'missed' ? 'missed' : s.dayType}`}>
-                  {status === 'missed' ? 'Missed' : formatDayType(s.dayType)}
+                <span
+                  className={`badge ${
+                    status === 'missed' ? 'missed' : status === 'rested' ? 'rested' : s.dayType
+                  }`}
+                >
+                  {status === 'missed'
+                    ? 'Incomplete'
+                    : status === 'rested'
+                      ? 'Rest'
+                      : formatDayType(s.dayType)}
                 </span>
               </Link>
             )
@@ -214,12 +253,12 @@ export function TrainPage() {
           <Link className="btn btn-ghost" to="/program">
             Full 12-week map
           </Link>
+          <Link className="btn btn-ghost" to="/profile">
+            Edit profile
+          </Link>
           <Link className="btn btn-ghost" to="/guides">
             Muscle focus guides
           </Link>
-          <button className="btn btn-danger" type="button" onClick={() => reset()}>
-            Reset profile
-          </button>
         </div>
       </div>
     </section>

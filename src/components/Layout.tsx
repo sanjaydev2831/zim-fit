@@ -9,7 +9,7 @@ export function Nav() {
     <header className="nav">
       <div className="container nav-inner">
         <NavLink to="/" className="brand">
-          Zim <span>Fit</span>
+          ZYM <span>FIT</span>
         </NavLink>
         <nav className="nav-links" aria-label="Main">
           {started && (
@@ -22,6 +22,9 @@ export function Nav() {
               </NavLink>
               <NavLink to="/guides" className={({ isActive }) => (isActive ? 'active' : '')}>
                 Guides
+              </NavLink>
+              <NavLink to="/profile" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Profile
               </NavLink>
             </>
           )}
@@ -58,7 +61,7 @@ export function Footer() {
   return (
     <footer className="footer">
       <div className="container">
-        Zim Fit is an educational gym guide based on ACSM, NSCA, and public physical-activity
+        ZYM FIT is an educational gym guide based on ACSM, NSCA, and public physical-activity
         guidelines. Not medical advice.
       </div>
     </footer>

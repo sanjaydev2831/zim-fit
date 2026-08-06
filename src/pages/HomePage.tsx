@@ -11,7 +11,7 @@ export function HomePage() {
         <div className="hero-media" aria-hidden />
         <div className="container hero-content">
           <h1 className="display">
-            Zim <span className="accent">Fit</span>
+            ZYM <span className="accent">FIT</span>
           </h1>
           <h2>Train like a coach is writing your day.</h2>
           <p>

@@ -91,7 +91,10 @@ export function FocusWorkoutPage() {
           {workout.blocks.map((b) => {
             const ex = getExercise(b.exerciseId)
             const reps = formatReps(b.reps)
-            const weight = getSuggestedWeight(b.exerciseId, level)
+            const weight = getSuggestedWeight(b.exerciseId, level, {
+              heightCm: state.profile?.heightCm,
+              weightKg: state.profile?.weightKg,
+            })
             return (
               <article key={`${b.exerciseId}-${b.sets}-${b.reps}`} className="exercise-card">
                 <div className="exercise-media">

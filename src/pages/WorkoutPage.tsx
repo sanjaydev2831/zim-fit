@@ -21,10 +21,19 @@ export function WorkoutPage() {
   const { week = '1', day = '1' } = useParams()
   const w = Number(week)
   const d = Number(day)
-  const { program, completeSession, isComplete, state, getDayAttendance } = useProgressContext()
+  const {
+    program,
+    completeSession,
+    markSessionIncomplete,
+    isComplete,
+    state,
+    getDayAttendance,
+    delayDays,
+  } = useProgressContext()
   const navigate = useNavigate()
   const session = getSession(program, w, d)
   const level = state.profile?.level ?? 'beginner'
+  const delay = delayDays ?? 0
 
   if (!session) {
     return (
@@ -41,12 +50,18 @@ export function WorkoutPage() {
 
   const done = isComplete(session.id)
   const attendance = state.profile ? getDayAttendance(session) : 'upcoming'
+  const markedIncomplete = (state.incompleteSessionIds ?? []).includes(session.id)
   const sessionDate = state.profile
-    ? getSessionDate(state.profile.startDate, session.week, session.day)
+    ? getSessionDate(state.profile.startDate, session.week, session.day, delay)
     : null
 
   function finish() {
     completeSession(session!.id)
+    navigate('/train')
+  }
+
+  function markIncomplete() {
+    markSessionIncomplete(session!.id)
     navigate('/train')
   }
 
@@ -62,7 +77,7 @@ export function WorkoutPage() {
           <h1 className="display">{session.title}</h1>
           <div className="meta-row">
             <span className={`badge ${attendance === 'missed' ? 'missed' : session.dayType}`}>
-              {attendance === 'missed' ? 'Missed' : formatDayType(session.dayType)}
+              {attendance === 'missed' ? 'Incomplete' : formatDayType(session.dayType)}
             </span>
             <span className={`badge ${attendance}`}>{attendanceLabel(attendance, session.dayType)}</span>
             {session.durationMin > 0 && <span>~{session.durationMin} minutes</span>}
@@ -81,11 +96,23 @@ export function WorkoutPage() {
           <div className="empty-rest panel">
             <h2 className="display">Rest</h2>
             <p className="muted">{expandAbbreviations(session.progressionTip)}</p>
-            {!done && (
-              <button className="btn btn-primary" type="button" onClick={finish}>
-                Mark rest complete
-              </button>
-            )}
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+              {!done && (
+                <button className="btn btn-primary" type="button" onClick={finish}>
+                  Mark rest complete
+                </button>
+              )}
+              {done && <span className="badge train">Completed</span>}
+              {markedIncomplete && <span className="badge missed">Incomplete</span>}
+              {!markedIncomplete && (
+                <button className="btn btn-danger" type="button" onClick={markIncomplete}>
+                  Mark as incomplete
+                </button>
+              )}
+              <Link className="btn btn-ghost" to="/train">
+                Back to today
+              </Link>
+            </div>
           </div>
         ) : (
           <>
@@ -115,7 +142,10 @@ export function WorkoutPage() {
               {session.blocks.map((b) => {
                 const ex = getExercise(b.exerciseId)
                 const reps = formatReps(b.reps)
-                const weight = getSuggestedWeight(b.exerciseId, level)
+                const weight = getSuggestedWeight(b.exerciseId, level, {
+                  heightCm: state.profile?.heightCm,
+                  weightKg: state.profile?.weightKg,
+                })
                 return (
                   <article key={`${b.exerciseId}-${b.sets}-${b.reps}`} className="exercise-card">
                     <div className="exercise-media">
@@ -197,12 +227,17 @@ export function WorkoutPage() {
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1.5rem' }}>
-              {!done ? (
+              {!done && (
                 <button className="btn btn-primary" type="button" onClick={finish}>
                   Mark session complete
                 </button>
-              ) : (
-                <span className="badge train">Completed</span>
+              )}
+              {done && <span className="badge train">Completed</span>}
+              {markedIncomplete && <span className="badge missed">Incomplete</span>}
+              {!markedIncomplete && (
+                <button className="btn btn-danger" type="button" onClick={markIncomplete}>
+                  Mark as incomplete
+                </button>
               )}
               <Link className="btn btn-ghost" to="/train">
                 Back to today

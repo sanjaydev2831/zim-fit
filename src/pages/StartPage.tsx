@@ -3,8 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import {
   daysPerWeekOptions,
   defaultEquipmentIds,
+  defaultRestWeekdays,
+  formatWeekdayList,
+  restDayCount,
   selectableEquipment,
   sessionDurationOptions,
+  weekdayShortLabels,
   type DaysPerWeek,
   type EquipmentId,
   type SessionDuration,
@@ -22,15 +26,37 @@ export function StartPage() {
   const [step, setStep] = useState<Step>('equipment')
   const [equipment, setEquipment] = useState<EquipmentId[]>([...defaultEquipmentIds])
   const [daysPerWeek, setDaysPerWeek] = useState<DaysPerWeek>(3)
+  const [restWeekdays, setRestWeekdays] = useState<number[]>(() => defaultRestWeekdays(3))
   const [sessionDuration, setSessionDuration] = useState<SessionDuration>(45)
   const [name, setName] = useState('')
+  const [heightCm, setHeightCm] = useState(170)
+  const [weightKg, setWeightKg] = useState(70)
   const [level, setLevel] = useState<ExperienceLevel>('beginner')
   const [goal, setGoal] = useState<UserProfile['goal']>('general')
   const [flags, setFlags] = useState<Record<string, boolean>>({})
   const [ack, setAck] = useState(false)
 
+  const neededRest = restDayCount(daysPerWeek)
+  const restPickedOk = restWeekdays.length === neededRest
+  const bodyOk = heightCm >= 120 && heightCm <= 230 && weightKg >= 35 && weightKg <= 200
   const anyFlag = useMemo(() => Object.values(flags).some(Boolean), [flags])
-  const canFinish = ack && name.trim().length > 0
+  const canFinish = ack && name.trim().length > 0 && restPickedOk && bodyOk
+
+  function chooseDaysPerWeek(days: DaysPerWeek) {
+    setDaysPerWeek(days)
+    setRestWeekdays(defaultRestWeekdays(days))
+  }
+
+  function toggleRestDay(day: number) {
+    setRestWeekdays((prev) => {
+      if (prev.includes(day)) return prev.filter((d) => d !== day)
+      // At capacity: swap in this day by dropping the last selected rest day
+      if (prev.length >= neededRest) {
+        return [...prev.slice(0, neededRest - 1), day].sort((a, b) => a - b)
+      }
+      return [...prev, day].sort((a, b) => a - b)
+    })
+  }
 
   function toggleEquipment(id: EquipmentId) {
     setEquipment((prev) =>
@@ -46,8 +72,11 @@ export function StartPage() {
       level,
       goal,
       daysPerWeek,
+      restWeekdays,
       sessionDuration,
       availableEquipment: equipment,
+      heightCm,
+      weightKg,
       screened: true,
       medicalClearanceNeeded: anyFlag,
     })
@@ -75,7 +104,8 @@ export function StartPage() {
           <p>
             {step === 'equipment' &&
               'Select machines common in Indian gyms (Smith, hack squat, pec deck, multi-gym…). Workouts swap to what you have.'}
-            {step === 'days' && 'How many days per week should your guide schedule?'}
+            {step === 'days' &&
+              'Choose how many days you train, then tap which weekdays are rest — they do not need to be next to each other.'}
             {step === 'duration' &&
               'Longer sessions unlock more exercises. Shorter sessions keep the key lifts.'}
             {step === 'profile' && 'Level and goal shape set progression.'}
@@ -144,18 +174,67 @@ export function StartPage() {
                   key={opt.days}
                   type="button"
                   className={`choice ${daysPerWeek === opt.days ? 'selected' : ''}`}
-                  onClick={() => setDaysPerWeek(opt.days)}
+                  onClick={() => chooseDaysPerWeek(opt.days)}
                 >
                   <strong>{opt.title}</strong>
                   <span>{opt.blurb}</span>
                 </button>
               ))}
             </div>
+
+            <div className="panel" style={{ marginTop: '1.25rem' }}>
+              <p style={{ marginTop: 0, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
+                Your rest days
+              </p>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Tap {neededRest} day{neededRest === 1 ? '' : 's'} to rest. Rest days can be any day
+                of the week — not necessarily in a row.
+              </p>
+              <div className="weekday-pick">
+                {weekdayShortLabels.map((label, i) => {
+                  const day = i + 1
+                  const isRest = restWeekdays.includes(day)
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      className={`weekday-chip ${isRest ? 'rest' : 'train'}`}
+                      onClick={() => toggleRestDay(day)}
+                      aria-pressed={isRest}
+                    >
+                      <strong>{label}</strong>
+                      <span>{isRest ? 'Rest' : 'Train'}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <p
+                className={restPickedOk ? 'accent' : 'muted'}
+                style={{
+                  marginBottom: 0,
+                  marginTop: '0.85rem',
+                  fontSize: '0.92rem',
+                  fontWeight: 700,
+                }}
+              >
+                {restPickedOk
+                  ? `Rest: ${formatWeekdayList(restWeekdays)}`
+                  : `Select ${neededRest - restWeekdays.length} more rest day${
+                      neededRest - restWeekdays.length === 1 ? '' : 's'
+                    }`}
+              </p>
+            </div>
+
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem', flexWrap: 'wrap' }}>
               <button className="btn btn-ghost" type="button" onClick={() => setStep('equipment')}>
                 Back
               </button>
-              <button className="btn btn-primary" type="button" onClick={() => setStep('duration')}>
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={!restPickedOk}
+                onClick={() => setStep('duration')}
+              >
                 Next · session length
               </button>
             </div>
@@ -219,6 +298,56 @@ export function StartPage() {
 
             <div className="panel">
               <p className="muted" style={{ marginTop: 0 }}>
+                Height &amp; weight
+              </p>
+              <div className="body-metrics">
+                <label>
+                  <span className="muted">Height (cm)</span>
+                  <input
+                    type="number"
+                    min={120}
+                    max={230}
+                    value={heightCm}
+                    onChange={(e) => setHeightCm(Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      padding: '0.85rem 1rem',
+                      borderRadius: 4,
+                      border: '1px solid var(--line)',
+                      background: 'var(--bg-soft)',
+                      color: 'var(--text)',
+                      marginTop: 6,
+                    }}
+                  />
+                </label>
+                <label>
+                  <span className="muted">Weight (kg)</span>
+                  <input
+                    type="number"
+                    min={35}
+                    max={200}
+                    step={0.5}
+                    value={weightKg}
+                    onChange={(e) => setWeightKg(Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      padding: '0.85rem 1rem',
+                      borderRadius: 4,
+                      border: '1px solid var(--line)',
+                      background: 'var(--bg-soft)',
+                      color: 'var(--text)',
+                      marginTop: 6,
+                    }}
+                  />
+                </label>
+              </div>
+              <p className="muted" style={{ marginBottom: 0, fontSize: '0.9rem' }}>
+                Helps tailor suggested loads to your body size.
+              </p>
+            </div>
+
+            <div className="panel">
+              <p className="muted" style={{ marginTop: 0 }}>
                 Experience level
               </p>
               <div className="choice-grid">
@@ -267,7 +396,7 @@ export function StartPage() {
               <button
                 className="btn btn-primary"
                 type="button"
-                disabled={!name.trim()}
+                disabled={!name.trim() || !bodyOk}
                 onClick={() => setStep('screen')}
               >
                 Next · safety
@@ -318,7 +447,7 @@ export function StartPage() {
                   style={{ marginTop: 4, accentColor: 'var(--accent)' }}
                 />
                 <span>
-                  I understand Zim Fit is educational, not medical advice, and I will stop for
+                  I understand ZYM FIT is educational, not medical advice, and I will stop for
                   warning symptoms.
                 </span>
               </label>
@@ -329,7 +458,8 @@ export function StartPage() {
                 <strong className="accent">{daysPerWeek} days/week</strong>
                 <span className="muted">
                   {' '}
-                  · {sessionDuration} min · {exerciseCount} exercises · {equipment.length} machines
+                  · Rest {formatWeekdayList(restWeekdays)} · {heightCm} cm / {weightKg} kg ·{' '}
+                  {sessionDuration} min · {exerciseCount} exercises · {equipment.length} machines
                 </span>
               </p>
             </div>

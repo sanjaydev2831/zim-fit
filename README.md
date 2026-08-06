@@ -1,4 +1,4 @@
-# Zim Fit
+# ZYM FIT
 
 Evidence-based **12-week gym trainer guide** — daily sessions, week-by-week difficulty, and safety limits grounded in ACSM, NSCA, and public physical-activity guidelines.
 

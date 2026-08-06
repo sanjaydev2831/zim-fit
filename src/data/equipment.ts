@@ -271,14 +271,44 @@ export function expandEquipment(selected: EquipmentId[]): EquipmentId[] {
 }
 
 export const daysPerWeekOptions = [
-  { days: 2 as const, title: '2 days', blurb: 'Full body twice · best if time is tight' },
-  { days: 3 as const, title: '3 days', blurb: 'Classic full-body trainer split' },
-  { days: 4 as const, title: '4 days', blurb: 'Upper / Lower · solid growth volume' },
-  { days: 5 as const, title: '5 days', blurb: 'Push / Pull / Legs + extras' },
-  { days: 6 as const, title: '6 days', blurb: 'Push / Pull / Legs twice · advanced density' },
+  { days: 2 as const, title: '2 days', blurb: 'You pick which 5 days are rest' },
+  { days: 3 as const, title: '3 days', blurb: 'You pick which 4 days are rest' },
+  { days: 4 as const, title: '4 days', blurb: 'You pick which 3 days are rest' },
+  { days: 5 as const, title: '5 days', blurb: 'You pick which 2 days are rest' },
+  { days: 6 as const, title: '6 days', blurb: 'You pick which 1 day is rest' },
 ]
 
 export type DaysPerWeek = (typeof daysPerWeekOptions)[number]['days']
+
+export const weekdayShortLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+
+/** Suggested rest weekdays (1=Mon … 7=Sun) — user can change freely */
+export function defaultRestWeekdays(daysPerWeek: DaysPerWeek): number[] {
+  const map: Record<DaysPerWeek, number[]> = {
+    2: [2, 3, 5, 6, 7],
+    3: [2, 4, 6, 7],
+    4: [3, 6, 7],
+    5: [6, 7],
+    6: [7],
+  }
+  return [...map[daysPerWeek]]
+}
+
+export function restDayCount(daysPerWeek: DaysPerWeek): number {
+  return 7 - daysPerWeek
+}
+
+export function trainWeekdaysFromRest(restWeekdays: number[]): number[] {
+  const rest = new Set(restWeekdays)
+  return [1, 2, 3, 4, 5, 6, 7].filter((d) => !rest.has(d))
+}
+
+export function formatWeekdayList(days: number[]): string {
+  return [...days]
+    .sort((a, b) => a - b)
+    .map((d) => weekdayShortLabels[d - 1] ?? `D${d}`)
+    .join(', ')
+}
 
 export const sessionDurationOptions = [
   {

@@ -11,9 +11,10 @@ import { useProgressContext } from '../context/ProgressContext'
 import { DifficultyMeter } from '../components/Layout'
 
 export function ProgramPage() {
-  const { state, program, todayPosition, getDayAttendance, jumpTo } = useProgressContext()
+  const { state, program, todayPosition, delayDays, getDayAttendance, jumpTo } = useProgressContext()
   const [week, setWeek] = useState(todayPosition.week || 1)
   const plan = program.find((w) => w.week === week)
+  const delay = delayDays ?? 0
 
   useEffect(() => {
     setWeek(todayPosition.week || 1)
@@ -39,8 +40,8 @@ export function ProgramPage() {
         <div className="section-head">
           <h1 className="display">12-week map</h1>
           <p>
-            Days follow your real start date calendar. Missed (not attended) days show in gray —
-            today is highlighted from the live date.
+            Weeks follow the live Mon–Sun calendar. Rest days are the ones you chose at setup —
+            any weekday, and they do not need to be consecutive.
           </p>
         </div>
 
@@ -82,7 +83,7 @@ export function ProgramPage() {
             <div className="day-list" style={{ marginTop: '1rem' }}>
               {plan.sessions.map((s) => {
                 const status = getDayAttendance(s)
-                const date = getSessionDate(state.profile!.startDate, s.week, s.day)
+                const date = getSessionDate(state.profile!.startDate, s.week, s.day, delay)
                 return (
                   <Link
                     key={s.id}
@@ -101,8 +102,16 @@ export function ProgramPage() {
                         {s.durationMin > 0 ? ` · ${s.durationMin} min` : ''}
                       </div>
                     </div>
-                    <span className={`badge ${status === 'missed' ? 'missed' : s.dayType}`}>
-                      {status === 'missed' ? 'Missed' : formatDayType(s.dayType)}
+                    <span
+                      className={`badge ${
+                        status === 'missed' ? 'missed' : status === 'rested' ? 'rested' : s.dayType
+                      }`}
+                    >
+                      {status === 'missed'
+                        ? 'Incomplete'
+                        : status === 'rested'
+                          ? 'Rest'
+                          : formatDayType(s.dayType)}
                     </span>
                   </Link>
                 )

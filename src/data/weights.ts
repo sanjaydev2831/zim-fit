@@ -268,14 +268,31 @@ export function applyLoadGuides() {
 
 applyLoadGuides()
 
+export function bodyContextNote(heightCm?: number, weightKg?: number): string | undefined {
+  if (!heightCm || !weightKg || heightCm < 100 || weightKg < 30) return undefined
+  const heightM = heightCm / 100
+  const bmi = weightKg / (heightM * heightM)
+  const bmiRounded = Math.round(bmi * 10) / 10
+  if (bmi < 18.5) {
+    return `BW ${weightKg} kg · BMI ~${bmiRounded} — prefer the lighter end of the range and add load slowly.`
+  }
+  if (bmi >= 30) {
+    return `BW ${weightKg} kg · BMI ~${bmiRounded} — prioritize form; start mid-low in the range for joints.`
+  }
+  return `BW ${weightKg} kg · BMI ~${bmiRounded} — use the range for your level; nudge up when reps feel easy.`
+}
+
 export function getSuggestedWeight(
   exerciseId: string,
   level: ExperienceLevel = 'beginner',
+  body?: { heightCm?: number; weightKg?: number },
 ): { label: string; tip?: string } | null {
   const load = loads[exerciseId] ?? exercises[exerciseId]?.suggestedWeight
   if (!load) return null
+  const bodyNote = bodyContextNote(body?.heightCm, body?.weightKg)
+  const tip = [load.tip, bodyNote].filter(Boolean).join(' ')
   return {
     label: load[level],
-    tip: load.tip,
+    tip: tip || undefined,
   }
 }

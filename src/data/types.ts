@@ -81,18 +81,40 @@ export interface UserProfile {
   level: ExperienceLevel
   goal: 'strength' | 'hypertrophy' | 'general'
   daysPerWeek: DaysPerWeek
+  /**
+   * Weekdays the user wants off (1=Mon … 7=Sun).
+   * Length must be 7 - daysPerWeek; days need not be consecutive.
+   */
+  restWeekdays: number[]
   sessionDuration: SessionDuration
   availableEquipment: EquipmentId[]
+  /** Height in centimetres (for load / BMI context) */
+  heightCm: number
+  /** Body weight in kilograms (for load suggestions) */
+  weightKg: number
   startDate: string
   screened: boolean
   medicalClearanceNeeded: boolean
 }
 
+export interface RestDayLog {
+  /** Local YYYY-MM-DD */
+  dateKey: string
+  requestedAt: string
+  note?: string
+}
+
 export interface ProgressState {
   profile: UserProfile | null
   completedSessionIds: string[]
+  /** Sessions the user explicitly marked incomplete (includes today) */
+  incompleteSessionIds: string[]
   currentWeek: number
   currentDay: number
+  /** Days the schedule was pushed forward after requested rest */
+  delayDays: number
+  /** Official rest days so they are not counted as missed */
+  restDays: RestDayLog[]
   /** Specialty muscle guides the user added */
   focusGuides: FocusGuideProgress[]
 }
