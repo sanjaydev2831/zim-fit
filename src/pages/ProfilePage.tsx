@@ -14,10 +14,12 @@ import {
 } from '../data/equipment'
 import { levelCopy } from '../data/program'
 import type { ExperienceLevel, UserProfile } from '../data/types'
+import { useAuth } from '../context/AuthContext'
 import { useProgressContext } from '../context/ProgressContext'
 
 export function ProfilePage() {
-  const { state, updateProfile, reset } = useProgressContext()
+  const { state, updateProfile, reset, cloudEnabled, syncing, syncError } = useProgressContext()
+  const { loggedIn, email } = useAuth()
   const navigate = useNavigate()
   const profile = state.profile
 
@@ -118,6 +120,20 @@ export function ProfilePage() {
             Change machines, rest days, session length, or training mode anytime — progress stays
             saved. Raise your level if sessions feel easy.
           </p>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            {cloudEnabled
+              ? `Cloud sync on${email ? ` · ${email}` : ''}${syncing ? ' · syncing…' : ''}`
+              : loggedIn
+                ? 'Signed in — waiting for API sync'
+                : (
+                  <>
+                    Local only · <Link to="/account">Log in</Link> to sync across devices
+                  </>
+                )}
+          </p>
+          {syncError && (
+            <p style={{ color: 'var(--danger, #c44)', marginBottom: 0 }}>{syncError}</p>
+          )}
         </div>
 
         <div className="panel">

@@ -4,6 +4,8 @@ import { getAttendance, getProgramPosition, startOfDay, toDateKey } from '../dat
 import type { ExperienceLevel, ProgressState, UserProfile } from '../data/types'
 import { buildProgram } from '../data/program'
 import { defaultRestWeekdays } from '../data/equipment'
+import * as api from '../lib/api'
+import { isLoggedIn } from '../lib/authStorage'
 
 const STORAGE_KEY = 'zim-fit-progress-v10'
 
@@ -16,6 +18,29 @@ const defaultState: ProgressState = {
   delayDays: 0,
   restDays: [],
   focusGuides: [],
+}
+
+function normalize(parsed: ProgressState): ProgressState {
+  const profile = parsed.profile
+    ? {
+        ...parsed.profile,
+        restWeekdays:
+          parsed.profile.restWeekdays?.length === 7 - parsed.profile.daysPerWeek
+            ? parsed.profile.restWeekdays
+            : defaultRestWeekdays(parsed.profile.daysPerWeek),
+        heightCm: parsed.profile.heightCm ?? 170,
+        weightKg: parsed.profile.weightKg ?? 70,
+      }
+    : null
+  return {
+    ...defaultState,
+    ...parsed,
+    profile,
+    incompleteSessionIds: parsed.incompleteSessionIds ?? [],
+    delayDays: parsed.delayDays ?? 0,
+    restDays: parsed.restDays ?? [],
+    focusGuides: parsed.focusGuides ?? [],
+  }
 }
 
 function load(): ProgressState {
@@ -35,37 +60,27 @@ function load(): ProgressState {
       ].forEach((k) => localStorage.removeItem(k))
       return defaultState
     }
-    const parsed = JSON.parse(raw) as ProgressState
-    const profile = parsed.profile
-      ? {
-          ...parsed.profile,
-          restWeekdays:
-            parsed.profile.restWeekdays?.length === 7 - parsed.profile.daysPerWeek
-              ? parsed.profile.restWeekdays
-              : defaultRestWeekdays(parsed.profile.daysPerWeek),
-          heightCm: parsed.profile.heightCm ?? 170,
-          weightKg: parsed.profile.weightKg ?? 70,
-        }
-      : null
-    return {
-      ...defaultState,
-      ...parsed,
-      profile,
-      incompleteSessionIds: parsed.incompleteSessionIds ?? [],
-      delayDays: parsed.delayDays ?? 0,
-      restDays: parsed.restDays ?? [],
-      focusGuides: parsed.focusGuides ?? [],
-    }
+    return normalize(JSON.parse(raw) as ProgressState)
   } catch {
     return defaultState
   }
 }
 
-export function useProgress() {
+export type AuthSync = {
+  loggedIn: boolean
+  authEpoch: number
+  apiReady: boolean
+}
+
+export function useProgress(auth?: AuthSync) {
   const [state, setState] = useState<ProgressState>(() =>
     typeof window === 'undefined' ? defaultState : load(),
   )
   const [todayTick, setTodayTick] = useState(() => new Date().toDateString())
+  const [syncing, setSyncing] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
+
+  const cloud = Boolean(auth?.apiReady && auth.loggedIn && isLoggedIn())
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
@@ -77,6 +92,42 @@ export function useProgress() {
       setTodayTick((prev) => (prev === next ? prev : next))
     }, 60_000)
     return () => window.clearInterval(id)
+  }, [])
+
+  // Pull cloud progress after login / auth change
+  useEffect(() => {
+    if (!auth?.apiReady || !auth.loggedIn || !isLoggedIn()) return
+    let cancelled = false
+    setSyncing(true)
+    setSyncError(null)
+    api
+      .fetchProgress()
+      .then((remote) => {
+        if (!cancelled) setState(normalize(remote))
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setSyncError(err instanceof Error ? err.message : 'Could not sync progress')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSyncing(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [auth?.apiReady, auth?.loggedIn, auth?.authEpoch])
+
+  const applyRemote = useCallback(async (run: () => Promise<ProgressState>) => {
+    setSyncError(null)
+    try {
+      const remote = await run()
+      setState(normalize(remote))
+      return true
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Sync failed')
+      return false
+    }
   }, [])
 
   const program = useMemo(
@@ -97,7 +148,6 @@ export function useProgress() {
     ],
   )
 
-  // Use local midnight for "today" — avoid parsing toDateString() which can drift
   const calendarToday = useMemo(() => startOfDay(new Date()), [todayTick])
   const delayDays = state.delayDays ?? 0
   const restDayKeys = useMemo(() => state.restDays.map((r) => r.dateKey), [state.restDays])
@@ -107,109 +157,161 @@ export function useProgress() {
     return getProgramPosition(state.profile.startDate, calendarToday, delayDays)
   }, [state.profile?.startDate, calendarToday, delayDays])
 
-  const start = useCallback((profile: Omit<UserProfile, 'startDate'> & { startDate?: string }) => {
-    // Store local calendar date (YYYY-MM-DD) so timezone does not shift the start day
-    const startDate = profile.startDate ?? toDateKey(new Date())
-    const pos = getProgramPosition(startDate, new Date(), 0)
-    setState((prev) => ({
-      profile: {
-        ...profile,
-        startDate,
-      },
-      completedSessionIds: [],
-      incompleteSessionIds: [],
-      currentWeek: pos.week,
-      currentDay: pos.day,
-      delayDays: 0,
-      restDays: [],
-      focusGuides: prev.focusGuides,
-    }))
-  }, [])
+  const start = useCallback(
+    (profile: Omit<UserProfile, 'startDate'> & { startDate?: string }) => {
+      const startDate = profile.startDate ?? toDateKey(new Date())
+      const payload = { ...profile, startDate }
+      const pos = getProgramPosition(startDate, new Date(), 0)
 
-  const completeSession = useCallback((sessionId: string) => {
-    setState((prev) => {
-      const completed = prev.completedSessionIds.includes(sessionId)
-        ? prev.completedSessionIds
-        : [...prev.completedSessionIds, sessionId]
-      const delay = prev.delayDays ?? 0
-      const pos = prev.profile?.startDate
-        ? getProgramPosition(prev.profile.startDate, new Date(), delay)
-        : { week: prev.currentWeek, day: prev.currentDay }
-      return {
-        ...prev,
-        completedSessionIds: completed,
-        incompleteSessionIds: (prev.incompleteSessionIds ?? []).filter((id) => id !== sessionId),
+      if (cloud) {
+        void applyRemote(() => api.startOnboarding(payload))
+        return
+      }
+
+      setState((prev) => ({
+        profile: payload,
+        completedSessionIds: [],
+        incompleteSessionIds: [],
         currentWeek: pos.week,
         currentDay: pos.day,
-      }
-    })
-  }, [])
+        delayDays: 0,
+        restDays: [],
+        focusGuides: prev.focusGuides,
+      }))
+    },
+    [cloud, applyRemote],
+  )
 
-  /** Mark session incomplete — clears completion and flags it as incomplete */
-  const markSessionIncomplete = useCallback((sessionId: string) => {
-    setState((prev) => {
-      const incomplete = prev.incompleteSessionIds ?? []
-      return {
-        ...prev,
-        completedSessionIds: prev.completedSessionIds.filter((id) => id !== sessionId),
-        incompleteSessionIds: incomplete.includes(sessionId)
-          ? incomplete
-          : [...incomplete, sessionId],
+  const completeSession = useCallback(
+    (sessionId: string) => {
+      if (cloud) {
+        void applyRemote(() => api.completeSessionRemote(sessionId))
+        return
       }
-    })
-  }, [])
+      setState((prev) => {
+        const completed = prev.completedSessionIds.includes(sessionId)
+          ? prev.completedSessionIds
+          : [...prev.completedSessionIds, sessionId]
+        const delay = prev.delayDays ?? 0
+        const pos = prev.profile?.startDate
+          ? getProgramPosition(prev.profile.startDate, new Date(), delay)
+          : { week: prev.currentWeek, day: prev.currentDay }
+        return {
+          ...prev,
+          completedSessionIds: completed,
+          incompleteSessionIds: (prev.incompleteSessionIds ?? []).filter((id) => id !== sessionId),
+          currentWeek: pos.week,
+          currentDay: pos.day,
+        }
+      })
+    },
+    [cloud, applyRemote],
+  )
 
-  /** Update profile fields without wiping completed sessions */
-  const updateProfile = useCallback((patch: Partial<UserProfile>) => {
-    setState((prev) => {
-      if (!prev.profile) return prev
-      const next = { ...prev.profile, ...patch }
-      if (patch.daysPerWeek && (!patch.restWeekdays || patch.restWeekdays.length !== 7 - patch.daysPerWeek)) {
-        next.restWeekdays = defaultRestWeekdays(patch.daysPerWeek)
+  const markSessionIncomplete = useCallback(
+    (sessionId: string) => {
+      if (cloud) {
+        void applyRemote(() => api.markIncompleteRemote(sessionId))
+        return
       }
-      return { ...prev, profile: next }
-    })
-  }, [])
+      setState((prev) => {
+        const incomplete = prev.incompleteSessionIds ?? []
+        return {
+          ...prev,
+          completedSessionIds: prev.completedSessionIds.filter((id) => id !== sessionId),
+          incompleteSessionIds: incomplete.includes(sessionId)
+            ? incomplete
+            : [...incomplete, sessionId],
+        }
+      })
+    },
+    [cloud, applyRemote],
+  )
 
-  const jumpTo = useCallback((week: number, day: number) => {
-    setState((prev) => ({
-      ...prev,
-      currentWeek: Math.min(12, Math.max(1, week)),
-      currentDay: Math.min(7, Math.max(1, day)),
-    }))
-  }, [])
+  const updateProfile = useCallback(
+    (patch: Partial<UserProfile>) => {
+      if (cloud) {
+        void applyRemote(() => api.patchProfile(patch))
+        return
+      }
+      setState((prev) => {
+        if (!prev.profile) return prev
+        const next = { ...prev.profile, ...patch }
+        if (
+          patch.daysPerWeek &&
+          (!patch.restWeekdays || patch.restWeekdays.length !== 7 - patch.daysPerWeek)
+        ) {
+          next.restWeekdays = defaultRestWeekdays(patch.daysPerWeek)
+        }
+        return { ...prev, profile: next }
+      })
+    },
+    [cloud, applyRemote],
+  )
+
+  const jumpTo = useCallback(
+    (week: number, day: number) => {
+      const w = Math.min(12, Math.max(1, week))
+      const d = Math.min(7, Math.max(1, day))
+      if (cloud) {
+        void applyRemote(() => api.jumpToRemote(w, d))
+        return
+      }
+      setState((prev) => ({ ...prev, currentWeek: w, currentDay: d }))
+    },
+    [cloud, applyRemote],
+  )
 
   const reset = useCallback(() => {
+    if (cloud) {
+      void applyRemote(() => api.resetProgressRemote())
+      return
+    }
     localStorage.removeItem(STORAGE_KEY)
     setState(defaultState)
-  }, [])
+  }, [cloud, applyRemote])
 
-  const setLevel = useCallback((level: ExperienceLevel) => {
-    setState((prev) =>
-      prev.profile ? { ...prev, profile: { ...prev.profile, level } } : prev,
-    )
-  }, [])
+  const setLevel = useCallback(
+    (level: ExperienceLevel) => {
+      updateProfile({ level })
+    },
+    [updateProfile],
+  )
 
-  const addFocusGuide = useCallback((guideId: FocusGuideId) => {
-    setState((prev) => {
-      if (prev.focusGuides.some((g) => g.guideId === guideId)) return prev
-      const entry: FocusGuideProgress = {
-        guideId,
-        addedAt: new Date().toISOString(),
-        completedSessionIds: [],
-        currentWeek: 1,
-        currentSession: 1,
+  const addFocusGuide = useCallback(
+    (guideId: FocusGuideId) => {
+      if (cloud) {
+        void applyRemote(() => api.addFocusGuideRemote(guideId))
+        return
       }
-      return { ...prev, focusGuides: [...prev.focusGuides, entry] }
-    })
-  }, [])
+      setState((prev) => {
+        if (prev.focusGuides.some((g) => g.guideId === guideId)) return prev
+        const entry: FocusGuideProgress = {
+          guideId,
+          addedAt: new Date().toISOString(),
+          completedSessionIds: [],
+          currentWeek: 1,
+          currentSession: 1,
+        }
+        return { ...prev, focusGuides: [...prev.focusGuides, entry] }
+      })
+    },
+    [cloud, applyRemote],
+  )
 
-  const removeFocusGuide = useCallback((guideId: FocusGuideId) => {
-    setState((prev) => ({
-      ...prev,
-      focusGuides: prev.focusGuides.filter((g) => g.guideId !== guideId),
-    }))
-  }, [])
+  const removeFocusGuide = useCallback(
+    (guideId: FocusGuideId) => {
+      if (cloud) {
+        void applyRemote(() => api.removeFocusGuideRemote(guideId))
+        return
+      }
+      setState((prev) => ({
+        ...prev,
+        focusGuides: prev.focusGuides.filter((g) => g.guideId !== guideId),
+      }))
+    },
+    [cloud, applyRemote],
+  )
 
   const completeFocusSession = useCallback(
     (
@@ -220,6 +322,18 @@ export function useProgress() {
       sessionsPerWeek: number,
       totalWeeks: number,
     ) => {
+      if (cloud) {
+        void applyRemote(() =>
+          api.completeFocusSessionRemote(guideId, {
+            sessionId,
+            week,
+            sessionNum,
+            sessionsPerWeek,
+            totalWeeks,
+          }),
+        )
+        return
+      }
       setState((prev) => ({
         ...prev,
         focusGuides: prev.focusGuides.map((g) => {
@@ -242,7 +356,7 @@ export function useProgress() {
         }),
       }))
     },
-    [],
+    [cloud, applyRemote],
   )
 
   const isFocusComplete = useCallback(
@@ -256,7 +370,6 @@ export function useProgress() {
   const currentWeekPlan = program.find((w) => w.week === todayPosition.week)
   const currentSession = currentWeekPlan?.sessions.find((s) => s.day === todayPosition.day)
   const completedCount = state.completedSessionIds.length
-
   const incompleteIds = state.incompleteSessionIds ?? []
 
   const getDayAttendance = useCallback(
@@ -291,6 +404,9 @@ export function useProgress() {
     calendarToday,
     todayPosition,
     delayDays,
+    syncing,
+    syncError,
+    cloudEnabled: cloud,
     start,
     completeSession,
     markSessionIncomplete,

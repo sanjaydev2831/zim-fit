@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import { ProgressContext } from './context/ProgressContext'
 import { useProgress } from './hooks/useProgress'
 import { Footer, Nav } from './components/Layout'
@@ -12,6 +13,7 @@ import { GuidesPage } from './pages/GuidesPage'
 import { GuideDetailPage } from './pages/GuideDetailPage'
 import { FocusWorkoutPage } from './pages/FocusWorkoutPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { AuthPage } from './pages/AuthPage'
 
 function AppRoutes() {
   return (
@@ -32,6 +34,7 @@ function AppRoutes() {
           />
           <Route path="/safety" element={<SafetyPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/account" element={<AuthPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -40,13 +43,27 @@ function AppRoutes() {
   )
 }
 
-export default function App() {
-  const progress = useProgress()
+function AppWithProgress() {
+  const auth = useAuth()
+  const progress = useProgress({
+    loggedIn: auth.loggedIn,
+    authEpoch: auth.authEpoch,
+    apiReady: auth.apiReady,
+  })
+
   return (
     <ProgressContext.Provider value={progress}>
       <BrowserRouter>
         <AppRoutes />
       </BrowserRouter>
     </ProgressContext.Provider>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppWithProgress />
+    </AuthProvider>
   )
 }

@@ -186,6 +186,16 @@ h3 {
   background: var(--accent-dim);
 }
 
+button.linkish {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent, #c8f542);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .btn-danger {
   background: transparent;
   color: var(--danger);

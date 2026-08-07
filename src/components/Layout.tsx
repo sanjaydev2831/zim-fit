@@ -1,8 +1,10 @@
 import { NavLink } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { useProgressContext } from '../context/ProgressContext'
 
 export function Nav() {
   const { state } = useProgressContext()
+  const { loggedIn } = useAuth()
   const started = Boolean(state.profile)
 
   return (
@@ -41,6 +43,9 @@ export function Nav() {
               Start
             </NavLink>
           )}
+          <NavLink to="/account" className={({ isActive }) => (isActive ? 'active' : '')}>
+            {loggedIn ? 'Account' : 'Log in'}
+          </NavLink>
         </nav>
       </div>
     </header>
