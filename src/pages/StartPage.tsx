@@ -1,30 +1,27 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  daysPerWeekOptions,
-  defaultEquipmentIds,
   defaultRestWeekdays,
   formatWeekdayList,
   restDayCount,
-  selectableEquipment,
-  sessionDurationOptions,
-  weekdayShortLabels,
   type DaysPerWeek,
   type EquipmentId,
   type SessionDuration,
 } from '../data/equipment'
 import { levelCopy } from '../data/program'
-import { redFlagsStopNow } from '../data/safety'
 import type { ExperienceLevel, UserProfile } from '../data/types'
+import { useCatalog } from '../context/CatalogContext'
 import { useProgressContext } from '../context/ProgressContext'
 
 type Step = 'equipment' | 'days' | 'duration' | 'profile' | 'screen'
 
 export function StartPage() {
   const { start } = useProgressContext()
+  const { selectableEquipment, options, safety } = useCatalog()
   const navigate = useNavigate()
+  const defaultEquipmentIds = selectableEquipment.map((e) => e.id as EquipmentId)
   const [step, setStep] = useState<Step>('equipment')
-  const [equipment, setEquipment] = useState<EquipmentId[]>([...defaultEquipmentIds])
+  const [equipment, setEquipment] = useState<EquipmentId[]>(() => [...defaultEquipmentIds])
   const [daysPerWeek, setDaysPerWeek] = useState<DaysPerWeek>(3)
   const [restWeekdays, setRestWeekdays] = useState<number[]>(() => defaultRestWeekdays(3))
   const [sessionDuration, setSessionDuration] = useState<SessionDuration>(45)
@@ -64,10 +61,10 @@ export function StartPage() {
     )
   }
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault()
     if (!canFinish) return
-    start({
+    await start({
       name: name.trim(),
       level,
       goal,
@@ -85,7 +82,7 @@ export function StartPage() {
 
   const stepIndex = { equipment: 1, days: 2, duration: 3, profile: 4, screen: 5 }[step]
   const exerciseCount =
-    sessionDurationOptions.find((o) => o.minutes === sessionDuration)?.exerciseCount ?? 6
+    options.sessionDuration.find((o) => o.minutes === sessionDuration)?.exerciseCount ?? 6
 
   return (
     <section className="section">
@@ -133,13 +130,14 @@ export function StartPage() {
             </div>
             <div className="equip-grid">
               {selectableEquipment.map((item) => {
-                const on = equipment.includes(item.id)
+                const id = item.id as EquipmentId
+                const on = equipment.includes(id)
                 return (
                   <button
                     key={item.id}
                     type="button"
                     className={`equip-card ${on ? 'selected' : ''}`}
-                    onClick={() => toggleEquipment(item.id)}
+                    onClick={() => toggleEquipment(id)}
                     aria-pressed={on}
                   >
                     <img src={item.image} alt="" loading="lazy" />
@@ -169,12 +167,12 @@ export function StartPage() {
         {step === 'days' && (
           <div>
             <div className="choice-grid">
-              {daysPerWeekOptions.map((opt) => (
+              {options.daysPerWeek.map((opt) => (
                 <button
                   key={opt.days}
                   type="button"
                   className={`choice ${daysPerWeek === opt.days ? 'selected' : ''}`}
-                  onClick={() => chooseDaysPerWeek(opt.days)}
+                  onClick={() => chooseDaysPerWeek(opt.days as DaysPerWeek)}
                 >
                   <strong>{opt.title}</strong>
                   <span>{opt.blurb}</span>
@@ -191,7 +189,7 @@ export function StartPage() {
                 of the week — not necessarily in a row.
               </p>
               <div className="weekday-pick">
-                {weekdayShortLabels.map((label, i) => {
+                {options.weekdayShortLabels.map((label, i) => {
                   const day = i + 1
                   const isRest = restWeekdays.includes(day)
                   return (
@@ -244,12 +242,12 @@ export function StartPage() {
         {step === 'duration' && (
           <div>
             <div className="choice-grid">
-              {sessionDurationOptions.map((opt) => (
+              {options.sessionDuration.map((opt) => (
                 <button
                   key={opt.minutes}
                   type="button"
                   className={`choice ${sessionDuration === opt.minutes ? 'selected' : ''}`}
-                  onClick={() => setSessionDuration(opt.minutes)}
+                  onClick={() => setSessionDuration(opt.minutes as SessionDuration)}
                 >
                   <strong>{opt.title}</strong>
                   <span>
@@ -406,13 +404,13 @@ export function StartPage() {
         )}
 
         {step === 'screen' && (
-          <form onSubmit={onSubmit}>
+          <form onSubmit={(e) => void onSubmit(e)}>
             <div className="panel">
               <p className="muted" style={{ marginTop: 0 }}>
                 Do you currently experience any of these?
               </p>
               <ul className="check-list">
-                {redFlagsStopNow.map((item) => (
+                {safety.redFlags.map((item) => (
                   <li key={item.title}>
                     <input
                       type="checkbox"

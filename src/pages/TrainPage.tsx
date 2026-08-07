@@ -8,11 +8,12 @@ import {
   weeklyRestBlurb,
 } from '../data/calendar'
 import { formatDayType, formatFocus } from '../data/labels'
-import { focusGuideCatalog } from '../data/focusGuides'
+import { useCatalog } from '../context/CatalogContext'
 import { useProgressContext } from '../context/ProgressContext'
 import { DifficultyMeter } from '../components/Layout'
 
 export function TrainPage() {
+  const { focusGuides } = useCatalog()
   const {
     state,
     currentWeekPlan,
@@ -226,7 +227,7 @@ export function TrainPage() {
             </h3>
             <div className="day-list">
               {state.focusGuides.map((g) => {
-                const info = focusGuideCatalog.find((c) => c.id === g.guideId)
+                const info = focusGuides.find((c) => c.id === g.guideId)
                 if (!info) return null
                 return (
                   <Link

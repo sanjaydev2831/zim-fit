@@ -18,7 +18,7 @@ export function AuthPage() {
       mode === 'login'
         ? await login(emailInput, password)
         : await signup(emailInput, password, name.trim() || undefined)
-    if (ok) navigate('/train')
+    if (ok) navigate('/')
   }
 
   if (!apiReady) {

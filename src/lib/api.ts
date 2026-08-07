@@ -180,3 +180,63 @@ export async function completeFocusSessionRemote(
     body: JSON.stringify(body),
   })
 }
+
+export type CatalogBundle = {
+  version: number
+  updatedAt: string
+  equipment: Array<{
+    id: string
+    name: string
+    category: string
+    description: string
+    image: string
+    alwaysAvailable?: boolean
+  }>
+  exercises: Record<string, unknown>
+  focusGuides: Array<{
+    id: string
+    name: string
+    tagline: string
+    targetMuscles: string
+    weeks: number
+    sessionsPerWeek: number
+    recommendedMin: number
+    image: string
+    whoFor: string
+    howToUse: string
+    precautions: string[]
+  }>
+  safety: {
+    redFlags: Array<{ title: string; detail: string }>
+    beforeYouTrain: Array<{ title: string; detail: string }>
+    limits: Array<{ title: string; detail: string }>
+    disclaimers: string[]
+    sources: Array<{ name: string; what: string; url: string }>
+  }
+  glossary: Record<string, { short: string; full: string; meaning: string }>
+  options: {
+    daysPerWeek: Array<{ days: number; title: string; blurb: string }>
+    sessionDuration: Array<{
+      minutes: number
+      title: string
+      blurb: string
+      exerciseCount: number
+    }>
+    weekdayShortLabels: string[]
+  }
+}
+
+/** Public — no auth */
+export async function fetchCatalog(): Promise<CatalogBundle> {
+  if (!API_URL) throw new Error('VITE_API_URL is not set')
+  const res = await fetch(`${API_URL}/api/catalog`)
+  if (!res.ok) {
+    const msg = await parseError(res)
+    throw new Error(msg)
+  }
+  return (await res.json()) as CatalogBundle
+}
+
+export async function fetchProgramMe(): Promise<{ program: unknown }> {
+  return apiFetch<{ program: unknown }>('/api/program/me')
+}

@@ -1,16 +1,14 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import {
-  buildFocusGuideSessions,
-  getFocusGuideInfo,
-  type FocusGuideId,
-} from '../data/focusGuides'
+import { buildFocusGuideSessions, type FocusGuideId } from '../data/focusGuides'
+import { useCatalog } from '../context/CatalogContext'
 import { useProgressContext } from '../context/ProgressContext'
 import { DifficultyMeter } from '../components/Layout'
 
 export function GuideDetailPage() {
   const { guideId = '' } = useParams()
   const id = guideId as FocusGuideId
-  const info = getFocusGuideInfo(id)
+  const { getFocusGuide } = useCatalog()
+  const info = getFocusGuide(id)
   const { state, addFocusGuide, removeFocusGuide, isFocusComplete } = useProgressContext()
   const navigate = useNavigate()
 

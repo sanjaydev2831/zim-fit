@@ -1,10 +1,5 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { getExercise } from '../data/exercises'
-import {
-  getFocusGuideInfo,
-  getFocusSession,
-  type FocusGuideId,
-} from '../data/focusGuides'
+import { getFocusSession, type FocusGuideId } from '../data/focusGuides'
 import {
   expandAbbreviations,
   formatReps,
@@ -12,6 +7,7 @@ import {
   glossary,
 } from '../data/labels'
 import { getSuggestedWeight } from '../data/weights'
+import { useCatalog } from '../context/CatalogContext'
 import { useProgressContext } from '../context/ProgressContext'
 
 export function FocusWorkoutPage() {
@@ -19,9 +15,10 @@ export function FocusWorkoutPage() {
   const id = guideId as FocusGuideId
   const w = Number(week)
   const sNum = Number(session)
+  const { getFocusGuide, getExercise } = useCatalog()
   const { state, completeFocusSession, isFocusComplete, addFocusGuide } = useProgressContext()
   const navigate = useNavigate()
-  const info = getFocusGuideInfo(id)
+  const info = getFocusGuide(id)
   const level = state.profile?.level ?? 'beginner'
   const gear = state.profile?.availableEquipment ?? []
   const duration = state.profile?.sessionDuration ?? 45
@@ -90,6 +87,7 @@ export function FocusWorkoutPage() {
         <div className="block-list">
           {workout.blocks.map((b) => {
             const ex = getExercise(b.exerciseId)
+            if (!ex) return null
             const reps = formatReps(b.reps)
             const weight = getSuggestedWeight(b.exerciseId, level, {
               heightCm: state.profile?.heightCm,

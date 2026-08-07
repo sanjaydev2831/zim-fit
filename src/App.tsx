@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { CatalogProvider } from './context/CatalogContext'
 import { ProgressContext } from './context/ProgressContext'
 import { useProgress } from './hooks/useProgress'
 import { Footer, Nav } from './components/Layout'
@@ -63,7 +64,9 @@ function AppWithProgress() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppWithProgress />
+      <CatalogProvider>
+        <AppWithProgress />
+      </CatalogProvider>
     </AuthProvider>
   )
 }

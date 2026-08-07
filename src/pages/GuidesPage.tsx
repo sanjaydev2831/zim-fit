@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom'
-import { focusGuideCatalog, type FocusGuideId } from '../data/focusGuides'
+import type { FocusGuideId } from '../data/focusGuides'
+import { useCatalog } from '../context/CatalogContext'
 import { useProgressContext } from '../context/ProgressContext'
 
 export function GuidesPage() {
+  const { focusGuides } = useCatalog()
   const { state, addFocusGuide, removeFocusGuide } = useProgressContext()
   const activeIds = new Set(state.focusGuides.map((g) => g.guideId))
 
@@ -38,7 +40,8 @@ export function GuidesPage() {
             </h2>
             <div className="day-list">
               {state.focusGuides.map((g) => {
-                const info = focusGuideCatalog.find((c) => c.id === g.guideId)!
+                const info = focusGuides.find((c) => c.id === g.guideId)
+                if (!info) return null
                 return (
                   <Link
                     key={g.guideId}
@@ -61,7 +64,7 @@ export function GuidesPage() {
         )}
 
         <div className="guide-grid">
-          {focusGuideCatalog.map((guide) => {
+          {focusGuides.map((guide) => {
             const active = activeIds.has(guide.id)
             return (
               <article key={guide.id} className={`guide-card ${active ? 'active' : ''}`}>

@@ -1,5 +1,4 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { getExercise } from '../data/exercises'
 import {
   attendanceLabel,
   formatCalendarDate,
@@ -15,12 +14,14 @@ import {
 } from '../data/labels'
 import { getSession } from '../data/program'
 import { getSuggestedWeight } from '../data/weights'
+import { useCatalog } from '../context/CatalogContext'
 import { useProgressContext } from '../context/ProgressContext'
 
 export function WorkoutPage() {
   const { week = '1', day = '1' } = useParams()
   const w = Number(week)
   const d = Number(day)
+  const { getExercise } = useCatalog()
   const {
     program,
     completeSession,
@@ -141,6 +142,7 @@ export function WorkoutPage() {
             <div className="block-list">
               {session.blocks.map((b) => {
                 const ex = getExercise(b.exerciseId)
+                if (!ex) return null
                 const reps = formatReps(b.reps)
                 const weight = getSuggestedWeight(b.exerciseId, level, {
                   heightCm: state.profile?.heightCm,

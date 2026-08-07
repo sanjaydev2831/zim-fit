@@ -1,12 +1,9 @@
-import {
-  beforeYouTrain,
-  redFlagsStopNow,
-  sources,
-  trainingLimitations,
-  whatThisGuideIsNot,
-} from '../data/safety'
+import { useCatalog } from '../context/CatalogContext'
 
 export function SafetyPage() {
+  const { safety } = useCatalog()
+  const { redFlags, beforeYouTrain, limits, disclaimers, sources } = safety
+
   return (
     <section className="section">
       <div className="container">
@@ -21,7 +18,7 @@ export function SafetyPage() {
         <div className="panel">
           <h2 style={{ fontFamily: 'var(--font-body)', fontWeight: 800 }}>Stop and get help if…</h2>
           <div className="grid-2" style={{ marginTop: '1rem' }}>
-            {redFlagsStopNow.map((item) => (
+            {redFlags.map((item) => (
               <article key={item.title} className="feature" style={{ borderTop: 'none', paddingTop: 0 }}>
                 <h3 style={{ color: 'var(--danger)' }}>{item.title}</h3>
                 <p>{item.detail}</p>
@@ -52,7 +49,7 @@ export function SafetyPage() {
             Program limitations (how a smart trainer progresses you)
           </h2>
           <div className="phase-row" style={{ marginTop: '0.5rem' }}>
-            {trainingLimitations.map((item) => (
+            {limits.map((item) => (
               <div className="phase-item" key={item.title}>
                 <strong>Limit</strong>
                 <div>
@@ -69,7 +66,7 @@ export function SafetyPage() {
         <div className="panel">
           <h2 style={{ fontFamily: 'var(--font-body)', fontWeight: 800 }}>What this guide is not</h2>
           <ul className="steps">
-            {whatThisGuideIsNot.map((line) => (
+            {disclaimers.map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>

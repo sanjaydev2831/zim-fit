@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FocusGuideId, FocusGuideProgress } from '../data/focusGuides'
 import { getAttendance, getProgramPosition, startOfDay, toDateKey } from '../data/calendar'
 import type { ExperienceLevel, ProgressState, UserProfile } from '../data/types'
@@ -79,6 +79,7 @@ export function useProgress(auth?: AuthSync) {
   const [todayTick, setTodayTick] = useState(() => new Date().toDateString())
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const prevLoggedIn = useRef(auth?.loggedIn)
 
   const cloud = Boolean(auth?.apiReady && auth.loggedIn && isLoggedIn())
 
@@ -93,6 +94,17 @@ export function useProgress(auth?: AuthSync) {
     }, 60_000)
     return () => window.clearInterval(id)
   }, [])
+
+  // Reset local progress when auth goes from logged-in → logged-out
+  useEffect(() => {
+    const wasLoggedIn = prevLoggedIn.current
+    const nowLoggedIn = auth?.loggedIn ?? false
+    if (wasLoggedIn === true && nowLoggedIn === false) {
+      localStorage.removeItem(STORAGE_KEY)
+      setState(defaultState)
+    }
+    prevLoggedIn.current = nowLoggedIn
+  }, [auth?.loggedIn, auth?.authEpoch])
 
   // Pull cloud progress after login / auth change
   useEffect(() => {
@@ -158,15 +170,10 @@ export function useProgress(auth?: AuthSync) {
   }, [state.profile?.startDate, calendarToday, delayDays])
 
   const start = useCallback(
-    (profile: Omit<UserProfile, 'startDate'> & { startDate?: string }) => {
+    async (profile: Omit<UserProfile, 'startDate'> & { startDate?: string }): Promise<void> => {
       const startDate = profile.startDate ?? toDateKey(new Date())
       const payload = { ...profile, startDate }
       const pos = getProgramPosition(startDate, new Date(), 0)
-
-      if (cloud) {
-        void applyRemote(() => api.startOnboarding(payload))
-        return
-      }
 
       setState((prev) => ({
         profile: payload,
@@ -178,16 +185,16 @@ export function useProgress(auth?: AuthSync) {
         restDays: [],
         focusGuides: prev.focusGuides,
       }))
+
+      if (cloud) {
+        await applyRemote(() => api.startOnboarding(payload))
+      }
     },
     [cloud, applyRemote],
   )
 
   const completeSession = useCallback(
     (sessionId: string) => {
-      if (cloud) {
-        void applyRemote(() => api.completeSessionRemote(sessionId))
-        return
-      }
       setState((prev) => {
         const completed = prev.completedSessionIds.includes(sessionId)
           ? prev.completedSessionIds
@@ -204,16 +211,15 @@ export function useProgress(auth?: AuthSync) {
           currentDay: pos.day,
         }
       })
+      if (cloud) {
+        void applyRemote(() => api.completeSessionRemote(sessionId))
+      }
     },
     [cloud, applyRemote],
   )
 
   const markSessionIncomplete = useCallback(
     (sessionId: string) => {
-      if (cloud) {
-        void applyRemote(() => api.markIncompleteRemote(sessionId))
-        return
-      }
       setState((prev) => {
         const incomplete = prev.incompleteSessionIds ?? []
         return {
@@ -224,16 +230,15 @@ export function useProgress(auth?: AuthSync) {
             : [...incomplete, sessionId],
         }
       })
+      if (cloud) {
+        void applyRemote(() => api.markIncompleteRemote(sessionId))
+      }
     },
     [cloud, applyRemote],
   )
 
   const updateProfile = useCallback(
     (patch: Partial<UserProfile>) => {
-      if (cloud) {
-        void applyRemote(() => api.patchProfile(patch))
-        return
-      }
       setState((prev) => {
         if (!prev.profile) return prev
         const next = { ...prev.profile, ...patch }
@@ -245,6 +250,9 @@ export function useProgress(auth?: AuthSync) {
         }
         return { ...prev, profile: next }
       })
+      if (cloud) {
+        void applyRemote(() => api.patchProfile(patch))
+      }
     },
     [cloud, applyRemote],
   )
@@ -253,22 +261,20 @@ export function useProgress(auth?: AuthSync) {
     (week: number, day: number) => {
       const w = Math.min(12, Math.max(1, week))
       const d = Math.min(7, Math.max(1, day))
+      setState((prev) => ({ ...prev, currentWeek: w, currentDay: d }))
       if (cloud) {
         void applyRemote(() => api.jumpToRemote(w, d))
-        return
       }
-      setState((prev) => ({ ...prev, currentWeek: w, currentDay: d }))
     },
     [cloud, applyRemote],
   )
 
   const reset = useCallback(() => {
-    if (cloud) {
-      void applyRemote(() => api.resetProgressRemote())
-      return
-    }
     localStorage.removeItem(STORAGE_KEY)
     setState(defaultState)
+    if (cloud) {
+      void applyRemote(() => api.resetProgressRemote())
+    }
   }, [cloud, applyRemote])
 
   const setLevel = useCallback(
@@ -280,10 +286,6 @@ export function useProgress(auth?: AuthSync) {
 
   const addFocusGuide = useCallback(
     (guideId: FocusGuideId) => {
-      if (cloud) {
-        void applyRemote(() => api.addFocusGuideRemote(guideId))
-        return
-      }
       setState((prev) => {
         if (prev.focusGuides.some((g) => g.guideId === guideId)) return prev
         const entry: FocusGuideProgress = {
@@ -295,20 +297,22 @@ export function useProgress(auth?: AuthSync) {
         }
         return { ...prev, focusGuides: [...prev.focusGuides, entry] }
       })
+      if (cloud) {
+        void applyRemote(() => api.addFocusGuideRemote(guideId))
+      }
     },
     [cloud, applyRemote],
   )
 
   const removeFocusGuide = useCallback(
     (guideId: FocusGuideId) => {
-      if (cloud) {
-        void applyRemote(() => api.removeFocusGuideRemote(guideId))
-        return
-      }
       setState((prev) => ({
         ...prev,
         focusGuides: prev.focusGuides.filter((g) => g.guideId !== guideId),
       }))
+      if (cloud) {
+        void applyRemote(() => api.removeFocusGuideRemote(guideId))
+      }
     },
     [cloud, applyRemote],
   )
@@ -322,18 +326,6 @@ export function useProgress(auth?: AuthSync) {
       sessionsPerWeek: number,
       totalWeeks: number,
     ) => {
-      if (cloud) {
-        void applyRemote(() =>
-          api.completeFocusSessionRemote(guideId, {
-            sessionId,
-            week,
-            sessionNum,
-            sessionsPerWeek,
-            totalWeeks,
-          }),
-        )
-        return
-      }
       setState((prev) => ({
         ...prev,
         focusGuides: prev.focusGuides.map((g) => {
@@ -355,6 +347,17 @@ export function useProgress(auth?: AuthSync) {
           }
         }),
       }))
+      if (cloud) {
+        void applyRemote(() =>
+          api.completeFocusSessionRemote(guideId, {
+            sessionId,
+            week,
+            sessionNum,
+            sessionsPerWeek,
+            totalWeeks,
+          }),
+        )
+      }
     },
     [cloud, applyRemote],
   )

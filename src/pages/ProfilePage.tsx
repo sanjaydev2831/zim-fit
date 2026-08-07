@@ -1,13 +1,9 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  daysPerWeekOptions,
   defaultRestWeekdays,
   formatWeekdayList,
   restDayCount,
-  selectableEquipment,
-  sessionDurationOptions,
-  weekdayShortLabels,
   type DaysPerWeek,
   type EquipmentId,
   type SessionDuration,
@@ -15,10 +11,12 @@ import {
 import { levelCopy } from '../data/program'
 import type { ExperienceLevel, UserProfile } from '../data/types'
 import { useAuth } from '../context/AuthContext'
+import { useCatalog } from '../context/CatalogContext'
 import { useProgressContext } from '../context/ProgressContext'
 
 export function ProfilePage() {
   const { state, updateProfile, reset, cloudEnabled, syncing, syncError } = useProgressContext()
+  const { selectableEquipment, options } = useCatalog()
   const { loggedIn, email } = useAuth()
   const navigate = useNavigate()
   const profile = state.profile
@@ -245,12 +243,12 @@ export function ProfilePage() {
             Training days / week
           </p>
           <div className="choice-grid">
-            {daysPerWeekOptions.map((opt) => (
+            {options.daysPerWeek.map((opt) => (
               <button
                 key={opt.days}
                 type="button"
                 className={`choice ${daysPerWeek === opt.days ? 'selected' : ''}`}
-                onClick={() => chooseDaysPerWeek(opt.days)}
+                onClick={() => chooseDaysPerWeek(opt.days as DaysPerWeek)}
               >
                 <strong>{opt.title}</strong>
                 <span>{opt.blurb}</span>
@@ -261,7 +259,7 @@ export function ProfilePage() {
             Rest days (any weekday)
           </p>
           <div className="weekday-pick">
-            {weekdayShortLabels.map((label, i) => {
+            {options.weekdayShortLabels.map((label, i) => {
               const day = i + 1
               const isRest = restWeekdays.includes(day)
               return (
@@ -288,13 +286,13 @@ export function ProfilePage() {
             Session length
           </p>
           <div className="choice-grid">
-            {sessionDurationOptions.map((opt) => (
+            {options.sessionDuration.map((opt) => (
               <button
                 key={opt.minutes}
                 type="button"
                 className={`choice ${sessionDuration === opt.minutes ? 'selected' : ''}`}
                 onClick={() => {
-                  setSessionDuration(opt.minutes)
+                  setSessionDuration(opt.minutes as SessionDuration)
                   setSaved(false)
                 }}
               >
@@ -313,13 +311,14 @@ export function ProfilePage() {
           </p>
           <div className="equip-grid">
             {selectableEquipment.map((item) => {
-              const on = equipment.includes(item.id)
+              const id = item.id as EquipmentId
+              const on = equipment.includes(id)
               return (
                 <button
                   key={item.id}
                   type="button"
                   className={`equip-card ${on ? 'selected' : ''}`}
-                  onClick={() => toggleEquipment(item.id)}
+                  onClick={() => toggleEquipment(id)}
                   aria-pressed={on}
                 >
                   <img src={item.image} alt="" loading="lazy" />
