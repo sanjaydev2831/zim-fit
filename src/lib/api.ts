@@ -240,3 +240,135 @@ export async function fetchCatalog(): Promise<CatalogBundle> {
 export async function fetchProgramMe(): Promise<{ program: unknown }> {
   return apiFetch<{ program: unknown }>('/api/program/me')
 }
+
+export type AiOnboardPlan = {
+  name: string
+  level: UserProfile['level']
+  goal: UserProfile['goal']
+  daysPerWeek: UserProfile['daysPerWeek']
+  sessionDuration: UserProfile['sessionDuration']
+  restWeekdays?: number[]
+  availableEquipment: string[]
+  heightCm: number
+  weightKg: number
+  injuries: string[]
+  preferredGuides: FocusGuideId[]
+  trainingAgeMonths?: number
+  screened: boolean
+  medicalClearanceNeeded: boolean
+  summary: string
+  planNotes: string
+  coachTips: string[]
+}
+
+export type AiOnboardResult = {
+  plan: AiOnboardPlan
+  applied: boolean
+  progress: ProgressState | null
+  geminiConfigured: boolean
+}
+
+/** Preview does not require auth; apply:true does. */
+export async function aiOnboard(body: {
+  intake: string
+  name?: string
+  heightCm?: number
+  weightKg?: number
+  availableEquipment?: string[]
+  apply?: boolean
+}): Promise<AiOnboardResult> {
+  return apiFetch<AiOnboardResult>('/api/ai/onboard', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }, false)
+}
+
+export type AiPersonalizeResult = {
+  preferredGuides: FocusGuideId[]
+  summary: string
+  planNotes: string
+  coachTips: string[]
+  progress: ProgressState | null
+  geminiConfigured: boolean
+  model: string
+}
+
+/** Enrich guide from completed setup — does not override schedule/gear/goal. */
+export async function aiPersonalizeFromSetup(body: {
+  name: string
+  level: UserProfile['level']
+  goal: UserProfile['goal']
+  daysPerWeek: UserProfile['daysPerWeek']
+  sessionDuration: UserProfile['sessionDuration']
+  restWeekdays: number[]
+  availableEquipment: string[]
+  heightCm: number
+  weightKg: number
+  injuries?: string[]
+  preferredGuides?: FocusGuideId[]
+  trainingAgeMonths?: number
+  notes?: string | null
+  sleepHours?: number
+  redFlags?: string[]
+  screened?: boolean
+  medicalClearanceNeeded?: boolean
+  apply?: boolean
+}): Promise<AiPersonalizeResult> {
+  return apiFetch<AiPersonalizeResult>('/api/ai/personalize', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }, false)
+}
+
+export async function fetchAiStatus(): Promise<{
+  configured: boolean
+  model: string
+  features: string[]
+}> {
+  if (!API_URL) throw new Error('VITE_API_URL is not set')
+  const res = await fetch(`${API_URL}/api/ai/status`)
+  if (!res.ok) throw new Error(await parseError(res))
+  return (await res.json()) as { configured: boolean; model: string; features: string[] }
+}
+
+export async function askAiCoach(question: string): Promise<{ answer: string; model: string }> {
+  return apiFetch<{ answer: string; model: string }>('/api/ai/coach', {
+    method: 'POST',
+    body: JSON.stringify({ question }),
+  })
+}
+
+export async function logWorkoutRemote(body: {
+  sessionId: string
+  source?: 'program' | 'focus'
+  guideId?: string
+  durationMin?: number
+  effortRpe?: number
+  notes?: string
+  sets: Array<{
+    exerciseId: string
+    setIndex: number
+    reps?: number
+    weightKg?: number
+    rpe?: number
+    completed?: boolean
+  }>
+  markComplete?: boolean
+}): Promise<{ log: unknown; progress: ProgressState | null }> {
+  return apiFetch('/api/gym/logs', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function addBodyMetricRemote(body: {
+  weightKg?: number
+  heightCm?: number
+  bodyFatPct?: number
+  note?: string
+}): Promise<unknown> {
+  return apiFetch('/api/gym/metrics', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}

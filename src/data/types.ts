@@ -3,6 +3,8 @@ import type { FocusGuideId, FocusGuideProgress } from './focusGuides'
 
 export type ExperienceLevel = 'beginner' | 'returning' | 'intermediate'
 
+export type Goal = 'strength' | 'hypertrophy' | 'general'
+
 export type DayType = 'train' | 'active_recovery' | 'rest' | 'deload'
 
 export type MuscleFocus =
@@ -79,7 +81,7 @@ export interface WeekPlan {
 export interface UserProfile {
   name: string
   level: ExperienceLevel
-  goal: 'strength' | 'hypertrophy' | 'general'
+  goal: Goal
   daysPerWeek: DaysPerWeek
   /**
    * Weekdays the user wants off (1=Mon … 7=Sun).
@@ -95,6 +97,12 @@ export interface UserProfile {
   startDate: string
   screened: boolean
   medicalClearanceNeeded: boolean
+  injuries?: string[]
+  preferredGuides?: FocusGuideId[]
+  trainingAgeMonths?: number | null
+  notes?: string | null
+  aiSummary?: string | null
+  aiPlanNotes?: string | null
 }
 
 export interface RestDayLog {
@@ -109,6 +117,8 @@ export interface ProgressState {
   completedSessionIds: string[]
   /** Sessions the user explicitly marked incomplete (includes today) */
   incompleteSessionIds: string[]
+  /** Per-session checklist: sessionId → completed exerciseIds */
+  sessionExerciseProgress: Record<string, string[]>
   currentWeek: number
   currentDay: number
   /** Days the schedule was pushed forward after requested rest */

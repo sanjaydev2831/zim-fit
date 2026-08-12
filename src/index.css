@@ -884,6 +884,31 @@ button.linkish {
   font-size: 1.05rem;
 }
 
+.exercise-card.exercise-done {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-dim) 65%, var(--bg-elevated));
+}
+
+.exercise-done-btn {
+  margin-top: 0.85rem;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-weight: 700;
+  padding: 0.45rem 0.85rem;
+}
+
+.exercise-done-btn.is-done {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.exercise-done-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
 .sets-line {
   font-weight: 700;
   color: var(--accent);

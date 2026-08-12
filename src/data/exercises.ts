@@ -467,9 +467,16 @@ const needsAll: Record<string, EquipmentId[]> = {
   incline_press: ['dumbbells', 'bench'],
 }
 
+const FREE_EQUIPMENT = new Set<EquipmentId>(['bodyweight', 'mat'])
+
 export function canDoExercise(ex: Exercise, available: EquipmentId[]): boolean {
   if (!ex.equipmentIds.length) return true
   const bag = new Set(expandEquipment(available))
+  // bodyweight/mat are always injected — don't let them unlock machine exercises
+  const dedicated = ex.equipmentIds.filter((id) => !FREE_EQUIPMENT.has(id))
+  if (dedicated.length > 0) {
+    return dedicated.some((id) => bag.has(id))
+  }
   return ex.equipmentIds.some((id) => bag.has(id))
 }
 
@@ -492,7 +499,11 @@ export function isExerciseAvailable(exId: string, available: EquipmentId[]): boo
   return canDoExercise(ex, available)
 }
 
-export function resolveExerciseId(preferredId: string, available: EquipmentId[]): string {
+/** Returns null when preferred + all alts need gear the user did not select. */
+export function resolveExerciseId(
+  preferredId: string,
+  available: EquipmentId[],
+): string | null {
   const bag = new Set(expandEquipment(available))
   if (preferredId === 'bench_press') {
     if (bag.has('barbell') && bag.has('bench')) return 'bench_press'
@@ -505,11 +516,11 @@ export function resolveExerciseId(preferredId: string, available: EquipmentId[])
   }
   if (isExerciseAvailable(preferredId, available)) return preferredId
   const preferred = exercises[preferredId]
-  if (!preferred) return preferredId
+  if (!preferred) return null
   for (const alt of preferred.altExerciseIds) {
     if (isExerciseAvailable(alt, available)) return alt
   }
-  return preferredId
+  return null
 }
 
 export function getExercise(id: string): Exercise {

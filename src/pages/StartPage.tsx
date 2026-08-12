@@ -8,18 +8,39 @@ import {
   type EquipmentId,
   type SessionDuration,
 } from '../data/equipment'
+import type { FocusGuideId } from '../data/focusGuides'
 import { levelCopy } from '../data/program'
 import type { ExperienceLevel, UserProfile } from '../data/types'
+import { useAuth } from '../context/AuthContext'
 import { useCatalog } from '../context/CatalogContext'
 import { useProgressContext } from '../context/ProgressContext'
+import { aiPersonalizeFromSetup, isApiConfigured } from '../lib/api'
 
-type Step = 'equipment' | 'days' | 'duration' | 'profile' | 'screen'
+type Step = 'equipment' | 'days' | 'duration' | 'profile' | 'extras' | 'screen'
+
+const INJURY_OPTIONS = [
+  { id: 'knees', label: 'Knees' },
+  { id: 'lower_back', label: 'Lower back' },
+  { id: 'shoulders', label: 'Shoulders' },
+  { id: 'wrists', label: 'Wrists' },
+  { id: 'elbows', label: 'Elbows' },
+  { id: 'hips', label: 'Hips' },
+] as const
+
+const TRAINING_AGE_OPTIONS = [
+  { months: 0, label: 'New to lifting', blurb: 'Less than 3 months' },
+  { months: 6, label: 'Getting started', blurb: '3–12 months' },
+  { months: 18, label: 'Some experience', blurb: '1–3 years (maybe rusty)' },
+  { months: 36, label: 'Consistent', blurb: '3+ years' },
+] as const
 
 export function StartPage() {
-  const { start } = useProgressContext()
-  const { selectableEquipment, options, safety } = useCatalog()
+  const { start, addFocusGuide, updateProfile, hydrateFromRemote } = useProgressContext()
+  const { loggedIn, apiReady } = useAuth()
+  const { selectableEquipment, options, safety, focusGuides } = useCatalog()
   const navigate = useNavigate()
   const defaultEquipmentIds = selectableEquipment.map((e) => e.id as EquipmentId)
+
   const [step, setStep] = useState<Step>('equipment')
   const [equipment, setEquipment] = useState<EquipmentId[]>(() => [...defaultEquipmentIds])
   const [daysPerWeek, setDaysPerWeek] = useState<DaysPerWeek>(3)
@@ -30,14 +51,25 @@ export function StartPage() {
   const [weightKg, setWeightKg] = useState(70)
   const [level, setLevel] = useState<ExperienceLevel>('beginner')
   const [goal, setGoal] = useState<UserProfile['goal']>('general')
+  const [trainingAgeMonths, setTrainingAgeMonths] = useState(0)
+  const [focusAreas, setFocusAreas] = useState<FocusGuideId[]>([])
+  const [injuries, setInjuries] = useState<string[]>([])
+  const [sleepHours, setSleepHours] = useState(7)
+  const [notes, setNotes] = useState('')
   const [flags, setFlags] = useState<Record<string, boolean>>({})
   const [ack, setAck] = useState(false)
+  const [building, setBuilding] = useState(false)
+  const [buildError, setBuildError] = useState<string | null>(null)
 
   const neededRest = restDayCount(daysPerWeek)
   const restPickedOk = restWeekdays.length === neededRest
   const bodyOk = heightCm >= 120 && heightCm <= 230 && weightKg >= 35 && weightKg <= 200
   const anyFlag = useMemo(() => Object.values(flags).some(Boolean), [flags])
   const canFinish = ack && name.trim().length > 0 && restPickedOk && bodyOk
+
+  const stepIndex = { equipment: 1, days: 2, duration: 3, profile: 4, extras: 5, screen: 6 }[step]
+  const exerciseCount =
+    options.sessionDuration.find((o) => o.minutes === sessionDuration)?.exerciseCount ?? 6
 
   function chooseDaysPerWeek(days: DaysPerWeek) {
     setDaysPerWeek(days)
@@ -47,7 +79,6 @@ export function StartPage() {
   function toggleRestDay(day: number) {
     setRestWeekdays((prev) => {
       if (prev.includes(day)) return prev.filter((d) => d !== day)
-      // At capacity: swap in this day by dropping the last selected rest day
       if (prev.length >= neededRest) {
         return [...prev.slice(0, neededRest - 1), day].sort((a, b) => a - b)
       }
@@ -61,10 +92,28 @@ export function StartPage() {
     )
   }
 
+  function toggleFocus(id: FocusGuideId) {
+    setFocusAreas((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id)
+      if (prev.length >= 2) return [...prev.slice(1), id]
+      return [...prev, id]
+    })
+  }
+
+  function toggleInjury(id: string) {
+    setInjuries((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    )
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!canFinish) return
-    await start({
+    if (!canFinish || building) return
+    setBuilding(true)
+    setBuildError(null)
+
+    const medicalClearanceNeeded = anyFlag
+    const profileBase = {
       name: name.trim(),
       level,
       goal,
@@ -75,43 +124,90 @@ export function StartPage() {
       heightCm,
       weightKg,
       screened: true,
-      medicalClearanceNeeded: anyFlag,
-    })
-    navigate(anyFlag ? '/safety' : '/train')
-  }
+      medicalClearanceNeeded,
+      injuries,
+      preferredGuides: focusAreas,
+      trainingAgeMonths,
+      notes: notes.trim() || null,
+    }
 
-  const stepIndex = { equipment: 1, days: 2, duration: 3, profile: 4, screen: 5 }[step]
-  const exerciseCount =
-    options.sessionDuration.find((o) => o.minutes === sessionDuration)?.exerciseCount ?? 6
+    try {
+      await start(profileBase)
+
+      for (const guideId of focusAreas.slice(0, 2)) {
+        addFocusGuide(guideId)
+      }
+
+      // Gemini enriches summary / tips from the completed setup (does not override choices)
+      if (isApiConfigured() && apiReady) {
+        try {
+          const result = await aiPersonalizeFromSetup({
+            ...profileBase,
+            sleepHours,
+            redFlags: Object.entries(flags)
+              .filter(([, on]) => on)
+              .map(([title]) => title),
+            apply: loggedIn,
+          })
+          if (result.progress) {
+            hydrateFromRemote(result.progress)
+          } else {
+            updateProfile({
+              aiSummary: result.summary,
+              aiPlanNotes: result.planNotes,
+              preferredGuides: result.preferredGuides.length
+                ? result.preferredGuides
+                : focusAreas,
+            })
+            for (const guideId of result.preferredGuides.slice(0, 2)) {
+              if (!focusAreas.includes(guideId)) addFocusGuide(guideId)
+            }
+          }
+        } catch {
+          // Setup still succeeds without AI enrichment
+        }
+      }
+
+      navigate(medicalClearanceNeeded ? '/safety' : '/train')
+    } catch (err) {
+      setBuildError(err instanceof Error ? err.message : 'Could not build your guide')
+    } finally {
+      setBuilding(false)
+    }
+  }
 
   return (
     <section className="section">
       <div className="container" style={{ maxWidth: 720 }}>
         <div className="section-head">
           <p className="muted" style={{ margin: 0 }}>
-            Setup · step {stepIndex} of 5
+            Setup · step {stepIndex} of 6
           </p>
           <h1 className="display">
             {step === 'equipment' && 'Indian gym gear'}
             {step === 'days' && 'Training days'}
             {step === 'duration' && 'Session length'}
             {step === 'profile' && 'About you'}
+            {step === 'extras' && 'Focus & limits'}
             {step === 'screen' && 'Safety screen'}
           </h1>
           <p>
             {step === 'equipment' &&
-              'Select machines common in Indian gyms (Smith, hack squat, pec deck, multi-gym…). Workouts swap to what you have.'}
+              'Select machines common in Indian gyms. Workouts swap to what you have.'}
             {step === 'days' &&
-              'Choose how many days you train, then tap which weekdays are rest — they do not need to be next to each other.'}
+              'Choose how many days you train, then tap which weekdays are rest.'}
             {step === 'duration' &&
               'Longer sessions unlock more exercises. Shorter sessions keep the key lifts.'}
-            {step === 'profile' && 'Level and goal shape set progression.'}
+            {step === 'profile' &&
+              'Level, goal, and body metrics shape progression and suggested loads.'}
+            {step === 'extras' &&
+              'Pick focus areas and any joint limits — your 12-week guide and specialty work use this.'}
             {step === 'screen' && 'ACSM-style symptom check — not a medical diagnosis.'}
           </p>
         </div>
 
         <div className="progress-bar" aria-hidden>
-          <span style={{ width: `${(stepIndex / 5) * 100}%` }} />
+          <span style={{ width: `${(stepIndex / 6) * 100}%` }} />
         </div>
 
         {step === 'equipment' && (
@@ -185,8 +281,7 @@ export function StartPage() {
                 Your rest days
               </p>
               <p className="muted" style={{ marginTop: 0 }}>
-                Tap {neededRest} day{neededRest === 1 ? '' : 's'} to rest. Rest days can be any day
-                of the week — not necessarily in a row.
+                Tap {neededRest} day{neededRest === 1 ? '' : 's'} to rest.
               </p>
               <div className="weekday-pick">
                 {options.weekdayShortLabels.map((label, i) => {
@@ -257,8 +352,7 @@ export function StartPage() {
               ))}
             </div>
             <p className="muted" style={{ marginTop: '1rem' }}>
-              Your train days will target ~{sessionDuration} minutes with {exerciseCount} working
-              exercises (plus warm-up / cool-down).
+              ~{sessionDuration} min sessions with {exerciseCount} working exercises.
             </p>
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem', flexWrap: 'wrap' }}>
               <button className="btn btn-ghost" type="button" onClick={() => setStep('days')}>
@@ -339,9 +433,6 @@ export function StartPage() {
                   />
                 </label>
               </div>
-              <p className="muted" style={{ marginBottom: 0, fontSize: '0.9rem' }}>
-                Helps tailor suggested loads to your body size.
-              </p>
             </div>
 
             <div className="panel">
@@ -358,6 +449,25 @@ export function StartPage() {
                   >
                     <strong>{levelCopy[key].title}</strong>
                     <span>{levelCopy[key].blurb}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="panel">
+              <p className="muted" style={{ marginTop: 0 }}>
+                How long have you lifted?
+              </p>
+              <div className="choice-grid">
+                {TRAINING_AGE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.months}
+                    type="button"
+                    className={`choice ${trainingAgeMonths === opt.months ? 'selected' : ''}`}
+                    onClick={() => setTrainingAgeMonths(opt.months)}
+                  >
+                    <strong>{opt.label}</strong>
+                    <span>{opt.blurb}</span>
                   </button>
                 ))}
               </div>
@@ -395,8 +505,117 @@ export function StartPage() {
                 className="btn btn-primary"
                 type="button"
                 disabled={!name.trim() || !bodyOk}
-                onClick={() => setStep('screen')}
+                onClick={() => setStep('extras')}
               >
+                Next · focus & limits
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'extras' && (
+          <div>
+            <div className="panel">
+              <p className="muted" style={{ marginTop: 0 }}>
+                Extra focus areas (optional · max 2)
+              </p>
+              <div className="choice-grid">
+                {focusGuides.map((g) => {
+                  const id = g.id as FocusGuideId
+                  const on = focusAreas.includes(id)
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      className={`choice ${on ? 'selected' : ''}`}
+                      onClick={() => toggleFocus(id)}
+                      aria-pressed={on}
+                    >
+                      <strong>{g.name}</strong>
+                      <span>{g.tagline}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="panel">
+              <p className="muted" style={{ marginTop: 0 }}>
+                Joint or soft-tissue limits (optional)
+              </p>
+              <div className="choice-grid">
+                {INJURY_OPTIONS.map((opt) => {
+                  const on = injuries.includes(opt.id)
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`choice ${on ? 'selected' : ''}`}
+                      onClick={() => toggleInjury(opt.id)}
+                      aria-pressed={on}
+                    >
+                      <strong>{opt.label}</strong>
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="muted" style={{ marginBottom: 0, fontSize: '0.9rem' }}>
+                We keep volume sensible and avoid aggravating patterns — not a diagnosis.
+              </p>
+            </div>
+
+            <div className="panel">
+              <label className="muted" htmlFor="sleep" style={{ display: 'block', marginBottom: 8 }}>
+                Typical sleep (hours / night)
+              </label>
+              <input
+                id="sleep"
+                type="number"
+                min={4}
+                max={12}
+                step={0.5}
+                value={sleepHours}
+                onChange={(e) => setSleepHours(Number(e.target.value))}
+                style={{
+                  width: '100%',
+                  maxWidth: 160,
+                  padding: '0.85rem 1rem',
+                  borderRadius: 4,
+                  border: '1px solid var(--line)',
+                  background: 'var(--bg-soft)',
+                  color: 'var(--text)',
+                }}
+              />
+            </div>
+
+            <div className="panel">
+              <label className="muted" htmlFor="notes" style={{ display: 'block', marginBottom: 8 }}>
+                Anything else for your coach? (optional)
+              </label>
+              <textarea
+                id="notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                maxLength={400}
+                placeholder="e.g. Prefer morning sessions, avoid barbell back squat…"
+                style={{
+                  width: '100%',
+                  padding: '0.85rem 1rem',
+                  borderRadius: 4,
+                  border: '1px solid var(--line)',
+                  background: 'var(--bg-soft)',
+                  color: 'var(--text)',
+                  resize: 'vertical',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button className="btn btn-ghost" type="button" onClick={() => setStep('profile')}>
+                Back
+              </button>
+              <button className="btn btn-primary" type="button" onClick={() => setStep('screen')}>
                 Next · safety
               </button>
             </div>
@@ -456,18 +675,22 @@ export function StartPage() {
                 <strong className="accent">{daysPerWeek} days/week</strong>
                 <span className="muted">
                   {' '}
-                  · Rest {formatWeekdayList(restWeekdays)} · {heightCm} cm / {weightKg} kg ·{' '}
-                  {sessionDuration} min · {exerciseCount} exercises · {equipment.length} machines
+                  · {goal} · {level} · Rest {formatWeekdayList(restWeekdays)} · {heightCm} cm /{' '}
+                  {weightKg} kg · {sessionDuration} min · {equipment.length} machines
+                  {focusAreas.length ? ` · Focus: ${focusAreas.join(', ')}` : ''}
+                  {injuries.length ? ` · Limits: ${injuries.join(', ')}` : ''}
                 </span>
               </p>
             </div>
 
+            {buildError && <div className="alert">{buildError}</div>}
+
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <button className="btn btn-ghost" type="button" onClick={() => setStep('profile')}>
+              <button className="btn btn-ghost" type="button" onClick={() => setStep('extras')}>
                 Back
               </button>
-              <button className="btn btn-primary" type="submit" disabled={!canFinish}>
-                Build my guide
+              <button className="btn btn-primary" type="submit" disabled={!canFinish || building}>
+                {building ? 'Building your guide…' : 'Build my guide'}
               </button>
             </div>
           </form>

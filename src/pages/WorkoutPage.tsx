@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   attendanceLabel,
@@ -26,6 +27,8 @@ export function WorkoutPage() {
     program,
     completeSession,
     markSessionIncomplete,
+    toggleExerciseComplete,
+    getCompletedExercises,
     isComplete,
     state,
     getDayAttendance,
@@ -35,6 +38,29 @@ export function WorkoutPage() {
   const session = getSession(program, w, d)
   const level = state.profile?.level ?? 'beginner'
   const delay = delayDays ?? 0
+  const autoFinished = useRef(false)
+
+  const sessionId = session?.id ?? ''
+  const exerciseIds = session?.blocks.map((b) => b.exerciseId) ?? []
+  const exerciseKey = exerciseIds.join('|')
+  const completedExercises = getCompletedExercises(sessionId)
+  const doneCount = exerciseIds.filter((id) => completedExercises.includes(id)).length
+  const allExercisesDone = exerciseIds.length > 0 && doneCount === exerciseIds.length
+  const done = session ? isComplete(session.id) : false
+  const isRest = session?.dayType === 'rest'
+
+  useEffect(() => {
+    autoFinished.current = false
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!sessionId || done || isRest || !allExercisesDone || autoFinished.current) {
+      return
+    }
+    autoFinished.current = true
+    completeSession(sessionId, exerciseKey.split('|').filter(Boolean))
+    navigate('/train')
+  }, [allExercisesDone, done, isRest, sessionId, exerciseKey, completeSession, navigate])
 
   if (!session) {
     return (
@@ -49,20 +75,20 @@ export function WorkoutPage() {
     )
   }
 
-  const done = isComplete(session.id)
-  const attendance = state.profile ? getDayAttendance(session) : 'upcoming'
-  const markedIncomplete = (state.incompleteSessionIds ?? []).includes(session.id)
+  const current = session
+  const attendance = state.profile ? getDayAttendance(current) : 'upcoming'
+  const markedIncomplete = (state.incompleteSessionIds ?? []).includes(current.id)
   const sessionDate = state.profile
-    ? getSessionDate(state.profile.startDate, session.week, session.day, delay)
+    ? getSessionDate(state.profile.startDate, current.week, current.day, delay)
     : null
 
   function finish() {
-    completeSession(session!.id)
+    completeSession(current.id, exerciseIds)
     navigate('/train')
   }
 
   function markIncomplete() {
-    markSessionIncomplete(session!.id)
+    markSessionIncomplete(current.id)
     navigate('/train')
   }
 
@@ -130,15 +156,25 @@ export function WorkoutPage() {
               </div>
             )}
 
-            <h2
+            <div
               style={{
-                fontFamily: 'var(--font-body)',
-                fontWeight: 800,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                gap: '1rem',
                 margin: '1.5rem 0 0.75rem',
+                flexWrap: 'wrap',
               }}
             >
-              Working sets
-            </h2>
+              <h2 style={{ fontFamily: 'var(--font-body)', fontWeight: 800, margin: 0 }}>
+                Working sets
+              </h2>
+              {exerciseIds.length > 0 && (
+                <p className="muted" style={{ margin: 0, fontWeight: 700 }}>
+                  {doneCount}/{exerciseIds.length} exercises done
+                </p>
+              )}
+            </div>
             <div className="block-list">
               {session.blocks.map((b) => {
                 const ex = getExercise(b.exerciseId)
@@ -148,8 +184,12 @@ export function WorkoutPage() {
                   heightCm: state.profile?.heightCm,
                   weightKg: state.profile?.weightKg,
                 })
+                const exerciseDone = completedExercises.includes(b.exerciseId)
                 return (
-                  <article key={`${b.exerciseId}-${b.sets}-${b.reps}`} className="exercise-card">
+                  <article
+                    key={`${b.exerciseId}-${b.sets}-${b.reps}`}
+                    className={`exercise-card${exerciseDone ? ' exercise-done' : ''}`}
+                  >
                     <div className="exercise-media">
                       <img src={ex.image} alt={ex.name} loading="lazy" />
                     </div>
@@ -190,6 +230,15 @@ export function WorkoutPage() {
                       <p className="muted" style={{ fontSize: '0.85rem', margin: '0.5rem 0 0' }}>
                         Swap options: {ex.substitutes.join(' · ')}
                       </p>
+                      <button
+                        type="button"
+                        className={`btn exercise-done-btn${exerciseDone ? ' is-done' : ''}`}
+                        onClick={() => toggleExerciseComplete(session.id, b.exerciseId)}
+                        disabled={done}
+                        aria-pressed={exerciseDone}
+                      >
+                        {exerciseDone ? '✓ Done' : 'Mark done'}
+                      </button>
                     </div>
                   </article>
                 )

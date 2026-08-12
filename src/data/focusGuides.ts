@@ -1,6 +1,6 @@
 import type { EquipmentId, SessionDuration } from './equipment'
 import { exerciseCountForDuration } from './equipment'
-import { resolveExerciseId } from './exercises'
+import { isExerciseAvailable, resolveExerciseId } from './exercises'
 import type { ExperienceLevel, Session, WorkoutSet } from './types'
 
 export type FocusGuideId =
@@ -47,16 +47,24 @@ function block(
 }
 
 function adapt(blocks: WorkoutSet[], available: EquipmentId[], duration: SessionDuration): WorkoutSet[] {
-  const n = Math.min(exerciseCountForDuration(duration), blocks.length)
-  return blocks.slice(0, n).map((b) => {
+  const seen = new Set<string>()
+  const adapted: WorkoutSet[] = []
+  for (const b of blocks) {
     const resolved = resolveExerciseId(b.exerciseId, available)
-    if (resolved === b.exerciseId) return b
-    return {
-      ...b,
-      exerciseId: resolved,
-      note: [b.note, `Swapped → ${resolved.replace(/_/g, ' ')}`].filter(Boolean).join(' · '),
+    if (!resolved || !isExerciseAvailable(resolved, available)) continue
+    if (seen.has(resolved)) continue
+    seen.add(resolved)
+    if (resolved === b.exerciseId) {
+      adapted.push(b)
+    } else {
+      adapted.push({
+        ...b,
+        exerciseId: resolved,
+        note: [b.note, `Swapped → ${resolved.replace(/_/g, ' ')}`].filter(Boolean).join(' · '),
+      })
     }
-  })
+  }
+  return adapted.slice(0, exerciseCountForDuration(duration))
 }
 
 const eq = (file: string) => `/equipment/${file}`

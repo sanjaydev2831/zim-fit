@@ -15,6 +15,7 @@ import { GuideDetailPage } from './pages/GuideDetailPage'
 import { FocusWorkoutPage } from './pages/FocusWorkoutPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { AuthPage } from './pages/AuthPage'
+import { CoachPage } from './pages/CoachPage'
 
 function AppRoutes() {
   return (
@@ -35,6 +36,7 @@ function AppRoutes() {
           />
           <Route path="/safety" element={<SafetyPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/coach" element={<CoachPage />} />
           <Route path="/account" element={<AuthPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

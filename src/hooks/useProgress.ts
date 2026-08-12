@@ -7,12 +7,13 @@ import { defaultRestWeekdays } from '../data/equipment'
 import * as api from '../lib/api'
 import { isLoggedIn } from '../lib/authStorage'
 
-const STORAGE_KEY = 'zim-fit-progress-v10'
+const STORAGE_KEY = 'zim-fit-progress-v11'
 
 const defaultState: ProgressState = {
   profile: null,
   completedSessionIds: [],
   incompleteSessionIds: [],
+  sessionExerciseProgress: {},
   currentWeek: 1,
   currentDay: 1,
   delayDays: 0,
@@ -37,6 +38,7 @@ function normalize(parsed: ProgressState): ProgressState {
     ...parsed,
     profile,
     incompleteSessionIds: parsed.incompleteSessionIds ?? [],
+    sessionExerciseProgress: parsed.sessionExerciseProgress ?? {},
     delayDays: parsed.delayDays ?? 0,
     restDays: parsed.restDays ?? [],
     focusGuides: parsed.focusGuides ?? [],
@@ -46,21 +48,33 @@ function normalize(parsed: ProgressState): ProgressState {
 function load(): ProgressState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      ;[
-        'zim-fit-progress-v9',
-        'zim-fit-progress-v8',
-        'zim-fit-progress-v7',
-        'zim-fit-progress-v6',
-        'zim-fit-progress-v5',
-        'zim-fit-progress-v4',
-        'zim-fit-progress-v3',
-        'zim-fit-progress-v2',
-        'zim-fit-progress-v1',
-      ].forEach((k) => localStorage.removeItem(k))
-      return defaultState
+    if (raw) return normalize(JSON.parse(raw) as ProgressState)
+
+    const legacyKeys = [
+      'zim-fit-progress-v10',
+      'zim-fit-progress-v9',
+      'zim-fit-progress-v8',
+      'zim-fit-progress-v7',
+      'zim-fit-progress-v6',
+      'zim-fit-progress-v5',
+      'zim-fit-progress-v4',
+      'zim-fit-progress-v3',
+      'zim-fit-progress-v2',
+      'zim-fit-progress-v1',
+    ]
+    for (const k of legacyKeys) {
+      const legacy = localStorage.getItem(k)
+      if (!legacy) continue
+      try {
+        const migrated = normalize(JSON.parse(legacy) as ProgressState)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))
+        legacyKeys.forEach((key) => localStorage.removeItem(key))
+        return migrated
+      } catch {
+        localStorage.removeItem(k)
+      }
     }
-    return normalize(JSON.parse(raw) as ProgressState)
+    return defaultState
   } catch {
     return defaultState
   }
@@ -115,7 +129,14 @@ export function useProgress(auth?: AuthSync) {
     api
       .fetchProgress()
       .then((remote) => {
-        if (!cancelled) setState(normalize(remote))
+        if (cancelled) return
+        setState((prev) =>
+          normalize({
+            ...remote,
+            sessionExerciseProgress:
+              remote.sessionExerciseProgress ?? prev.sessionExerciseProgress ?? {},
+          }),
+        )
       })
       .catch((err) => {
         if (!cancelled) {
@@ -134,7 +155,13 @@ export function useProgress(auth?: AuthSync) {
     setSyncError(null)
     try {
       const remote = await run()
-      setState(normalize(remote))
+      setState((prev) =>
+        normalize({
+          ...remote,
+          sessionExerciseProgress:
+            remote.sessionExerciseProgress ?? prev.sessionExerciseProgress ?? {},
+        }),
+      )
       return true
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : 'Sync failed')
@@ -150,6 +177,7 @@ export function useProgress(auth?: AuthSync) {
         state.profile?.availableEquipment ?? [],
         state.profile?.sessionDuration ?? 45,
         state.profile?.restWeekdays ?? defaultRestWeekdays(state.profile?.daysPerWeek ?? 3),
+        state.profile?.goal ?? 'general',
       ),
     [
       state.profile?.level,
@@ -157,6 +185,7 @@ export function useProgress(auth?: AuthSync) {
       state.profile?.availableEquipment,
       state.profile?.sessionDuration,
       state.profile?.restWeekdays,
+      state.profile?.goal,
     ],
   )
 
@@ -175,16 +204,17 @@ export function useProgress(auth?: AuthSync) {
       const payload = { ...profile, startDate }
       const pos = getProgramPosition(startDate, new Date(), 0)
 
-      setState((prev) => ({
+      setState({
         profile: payload,
         completedSessionIds: [],
         incompleteSessionIds: [],
+        sessionExerciseProgress: {},
         currentWeek: pos.week,
         currentDay: pos.day,
         delayDays: 0,
         restDays: [],
-        focusGuides: prev.focusGuides,
-      }))
+        focusGuides: [],
+      })
 
       if (cloud) {
         await applyRemote(() => api.startOnboarding(payload))
@@ -194,7 +224,7 @@ export function useProgress(auth?: AuthSync) {
   )
 
   const completeSession = useCallback(
-    (sessionId: string) => {
+    (sessionId: string, exerciseIds?: string[]) => {
       setState((prev) => {
         const completed = prev.completedSessionIds.includes(sessionId)
           ? prev.completedSessionIds
@@ -203,10 +233,15 @@ export function useProgress(auth?: AuthSync) {
         const pos = prev.profile?.startDate
           ? getProgramPosition(prev.profile.startDate, new Date(), delay)
           : { week: prev.currentWeek, day: prev.currentDay }
+        const progress = { ...(prev.sessionExerciseProgress ?? {}) }
+        if (exerciseIds?.length) {
+          progress[sessionId] = [...new Set(exerciseIds)]
+        }
         return {
           ...prev,
           completedSessionIds: completed,
           incompleteSessionIds: (prev.incompleteSessionIds ?? []).filter((id) => id !== sessionId),
+          sessionExerciseProgress: progress,
           currentWeek: pos.week,
           currentDay: pos.day,
         }
@@ -218,16 +253,50 @@ export function useProgress(auth?: AuthSync) {
     [cloud, applyRemote],
   )
 
+  const toggleExerciseComplete = useCallback((sessionId: string, exerciseId: string) => {
+    setState((prev) => {
+      const progress = { ...(prev.sessionExerciseProgress ?? {}) }
+      const current = progress[sessionId] ?? []
+      progress[sessionId] = current.includes(exerciseId)
+        ? current.filter((id) => id !== exerciseId)
+        : [...current, exerciseId]
+      return { ...prev, sessionExerciseProgress: progress }
+    })
+  }, [])
+
+  const markExercisesComplete = useCallback((sessionId: string, exerciseIds: string[]) => {
+    setState((prev) => {
+      const progress = { ...(prev.sessionExerciseProgress ?? {}) }
+      progress[sessionId] = [...new Set(exerciseIds)]
+      return { ...prev, sessionExerciseProgress: progress }
+    })
+  }, [])
+
+  const isExerciseComplete = useCallback(
+    (sessionId: string, exerciseId: string) => {
+      return (state.sessionExerciseProgress?.[sessionId] ?? []).includes(exerciseId)
+    },
+    [state.sessionExerciseProgress],
+  )
+
+  const getCompletedExercises = useCallback(
+    (sessionId: string) => state.sessionExerciseProgress?.[sessionId] ?? [],
+    [state.sessionExerciseProgress],
+  )
+
   const markSessionIncomplete = useCallback(
     (sessionId: string) => {
       setState((prev) => {
         const incomplete = prev.incompleteSessionIds ?? []
+        const progress = { ...(prev.sessionExerciseProgress ?? {}) }
+        delete progress[sessionId]
         return {
           ...prev,
           completedSessionIds: prev.completedSessionIds.filter((id) => id !== sessionId),
           incompleteSessionIds: incomplete.includes(sessionId)
             ? incomplete
             : [...incomplete, sessionId],
+          sessionExerciseProgress: progress,
         }
       })
       if (cloud) {
@@ -398,6 +467,16 @@ export function useProgress(auth?: AuthSync) {
     ],
   )
 
+  const hydrateFromRemote = useCallback((remote: ProgressState) => {
+    setState((prev) =>
+      normalize({
+        ...remote,
+        sessionExerciseProgress:
+          remote.sessionExerciseProgress ?? prev.sessionExerciseProgress ?? {},
+      }),
+    )
+  }, [])
+
   return {
     state,
     program,
@@ -413,6 +492,10 @@ export function useProgress(auth?: AuthSync) {
     start,
     completeSession,
     markSessionIncomplete,
+    toggleExerciseComplete,
+    markExercisesComplete,
+    isExerciseComplete,
+    getCompletedExercises,
     updateProfile,
     jumpTo,
     reset,
@@ -422,6 +505,7 @@ export function useProgress(auth?: AuthSync) {
     completeFocusSession,
     isFocusComplete,
     getDayAttendance,
+    hydrateFromRemote,
     isComplete: (id: string) => state.completedSessionIds.includes(id),
   }
 }

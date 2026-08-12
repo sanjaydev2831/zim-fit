@@ -28,6 +28,9 @@ export function Nav() {
               <NavLink to="/profile" className={({ isActive }) => (isActive ? 'active' : '')}>
                 Profile
               </NavLink>
+              <NavLink to="/coach" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Coach
+              </NavLink>
             </>
           )}
           {!started && (

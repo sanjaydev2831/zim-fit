@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getFocusSession, type FocusGuideId } from '../data/focusGuides'
 import {
@@ -16,7 +17,15 @@ export function FocusWorkoutPage() {
   const w = Number(week)
   const sNum = Number(session)
   const { getFocusGuide, getExercise } = useCatalog()
-  const { state, completeFocusSession, isFocusComplete, addFocusGuide } = useProgressContext()
+  const {
+    state,
+    completeFocusSession,
+    isFocusComplete,
+    addFocusGuide,
+    toggleExerciseComplete,
+    getCompletedExercises,
+    markExercisesComplete,
+  } = useProgressContext()
   const navigate = useNavigate()
   const info = getFocusGuide(id)
   const level = state.profile?.level ?? 'beginner'
@@ -24,6 +33,42 @@ export function FocusWorkoutPage() {
   const duration = state.profile?.sessionDuration ?? 45
   const workout = getFocusSession(id, w, sNum, level, gear, duration)
   const progress = state.focusGuides.find((g) => g.guideId === id)
+  const autoFinished = useRef(false)
+
+  const sessionId = workout?.id ?? ''
+  const exerciseIds = workout?.blocks.map((b) => b.exerciseId) ?? []
+  const exerciseKey = exerciseIds.join('|')
+  const completedExercises = getCompletedExercises(sessionId)
+  const doneCount = exerciseIds.filter((exId) => completedExercises.includes(exId)).length
+  const allExercisesDone = exerciseIds.length > 0 && doneCount === exerciseIds.length
+  const done = workout ? isFocusComplete(id, workout.id) : false
+
+  useEffect(() => {
+    autoFinished.current = false
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!info || !sessionId || done || !allExercisesDone || autoFinished.current) return
+    autoFinished.current = true
+    if (!progress) addFocusGuide(id)
+    markExercisesComplete(sessionId, exerciseKey.split('|').filter(Boolean))
+    completeFocusSession(id, sessionId, w, sNum, info.sessionsPerWeek, info.weeks)
+    navigate(`/guides/${id}`)
+  }, [
+    allExercisesDone,
+    done,
+    info,
+    sessionId,
+    exerciseKey,
+    progress,
+    addFocusGuide,
+    markExercisesComplete,
+    completeFocusSession,
+    id,
+    w,
+    sNum,
+    navigate,
+  ])
 
   if (!info || !workout) {
     return (
@@ -38,11 +83,13 @@ export function FocusWorkoutPage() {
     )
   }
 
-  const done = isFocusComplete(id, workout.id)
+  const guide = info
+  const current = workout
 
   function finish() {
     if (!progress) addFocusGuide(id)
-    completeFocusSession(id, workout!.id, w, sNum, info!.sessionsPerWeek, info!.weeks)
+    markExercisesComplete(current.id, exerciseIds)
+    completeFocusSession(id, current.id, w, sNum, guide.sessionsPerWeek, guide.weeks)
     navigate(`/guides/${id}`)
   }
 
@@ -75,15 +122,25 @@ export function FocusWorkoutPage() {
           </div>
         )}
 
-        <h2
+        <div
           style={{
-            fontFamily: 'var(--font-body)',
-            fontWeight: 800,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            gap: '1rem',
             margin: '1.5rem 0 0.75rem',
+            flexWrap: 'wrap',
           }}
         >
-          Working sets
-        </h2>
+          <h2 style={{ fontFamily: 'var(--font-body)', fontWeight: 800, margin: 0 }}>
+            Working sets
+          </h2>
+          {exerciseIds.length > 0 && (
+            <p className="muted" style={{ margin: 0, fontWeight: 700 }}>
+              {doneCount}/{exerciseIds.length} exercises done
+            </p>
+          )}
+        </div>
         <div className="block-list">
           {workout.blocks.map((b) => {
             const ex = getExercise(b.exerciseId)
@@ -93,8 +150,12 @@ export function FocusWorkoutPage() {
               heightCm: state.profile?.heightCm,
               weightKg: state.profile?.weightKg,
             })
+            const exerciseDone = completedExercises.includes(b.exerciseId)
             return (
-              <article key={`${b.exerciseId}-${b.sets}-${b.reps}`} className="exercise-card">
+              <article
+                key={`${b.exerciseId}-${b.sets}-${b.reps}`}
+                className={`exercise-card${exerciseDone ? ' exercise-done' : ''}`}
+              >
                 <div className="exercise-media">
                   <img src={ex.image} alt={ex.name} loading="lazy" />
                 </div>
@@ -125,6 +186,15 @@ export function FocusWorkoutPage() {
                   </ul>
                   {b.note && <p className="caution">{expandAbbreviations(b.note)}</p>}
                   {ex.caution && <p className="caution">Caution: {ex.caution}</p>}
+                  <button
+                    type="button"
+                    className={`btn exercise-done-btn${exerciseDone ? ' is-done' : ''}`}
+                    onClick={() => toggleExerciseComplete(workout.id, b.exerciseId)}
+                    disabled={done}
+                    aria-pressed={exerciseDone}
+                  >
+                    {exerciseDone ? '✓ Done' : 'Mark done'}
+                  </button>
                 </div>
               </article>
             )

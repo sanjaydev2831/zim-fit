@@ -1,7 +1,7 @@
 import type { DaysPerWeek, EquipmentId, SessionDuration } from './equipment'
 import { exerciseCountForDuration } from './equipment'
-import { resolveExerciseId } from './exercises'
-import type { ExperienceLevel, Session, WeekPlan, WorkoutSet } from './types'
+import { isExerciseAvailable, resolveExerciseId } from './exercises'
+import type { ExperienceLevel, Goal, Session, WeekPlan, WorkoutSet } from './types'
 
 export type { DaysPerWeek, SessionDuration }
 
@@ -17,30 +17,82 @@ function block(
 }
 
 function adaptBlocks(blocks: WorkoutSet[], available: EquipmentId[]): WorkoutSet[] {
-  return blocks.map((b) => {
+  const seen = new Set<string>()
+  const out: WorkoutSet[] = []
+  for (const b of blocks) {
     const resolved = resolveExerciseId(b.exerciseId, available)
-    if (resolved === b.exerciseId) return b
-    return {
-      ...b,
-      exerciseId: resolved,
-      note: [b.note, `Swapped → ${resolved.replace(/_/g, ' ')}`].filter(Boolean).join(' · '),
+    if (!resolved || !isExerciseAvailable(resolved, available)) continue
+    if (seen.has(resolved)) continue
+    seen.add(resolved)
+    if (resolved === b.exerciseId) {
+      out.push(b)
+    } else {
+      out.push({
+        ...b,
+        exerciseId: resolved,
+        note: [b.note, `Swapped → ${resolved.replace(/_/g, ' ')}`].filter(Boolean).join(' · '),
+      })
     }
-  })
+  }
+  return out
 }
 
 function fitDuration(blocks: WorkoutSet[], duration: SessionDuration): WorkoutSet[] {
   return blocks.slice(0, exerciseCountForDuration(duration))
 }
 
+function biasRepsToward(reps: string, direction: 'low' | 'high'): string {
+  const range = reps.match(/^(\d+)\s*[–-]\s*(\d+)$/)
+  if (range) {
+    const lo = Number(range[1])
+    const hi = Number(range[2])
+    if (direction === 'low') {
+      const nextLo = Math.max(3, lo - 2)
+      const nextHi = Math.max(nextLo + 1, Math.min(hi - 1, nextLo + 3))
+      return `${nextLo}–${nextHi}`
+    }
+    const nextLo = Math.min(15, lo + 2)
+    const nextHi = Math.min(20, Math.max(hi + 2, nextLo + 2))
+    return `${nextLo}–${nextHi}`
+  }
+  const single = reps.match(/^(\d+)$/)
+  if (single) {
+    const n = Number(single[1])
+    return String(direction === 'low' ? Math.max(3, n - 2) : Math.min(15, n + 2))
+  }
+  return reps
+}
+
+function applyGoalBias(blocks: WorkoutSet[], goal: Goal = 'general'): WorkoutSet[] {
+  if (goal === 'general') return blocks
+  return blocks.map((b) => {
+    if (goal === 'strength') {
+      return {
+        ...b,
+        reps: biasRepsToward(b.reps, 'low'),
+        restSec: Math.min(180, b.restSec + 30),
+        note: [b.note, 'Goal: strength — heavier, longer rest'].filter(Boolean).join(' · '),
+      }
+    }
+    return {
+      ...b,
+      reps: biasRepsToward(b.reps, 'high'),
+      restSec: Math.max(45, b.restSec - 15),
+      note: [b.note, 'Goal: hypertrophy — controlled volume'].filter(Boolean).join(' · '),
+    }
+  })
+}
+
 function finalize(
   session: Session,
   available: EquipmentId[],
   duration: SessionDuration,
+  goal: Goal = 'general',
 ): Session {
   return {
     ...session,
     durationMin: duration,
-    blocks: fitDuration(adaptBlocks(session.blocks, available), duration),
+    blocks: applyGoalBias(fitDuration(adaptBlocks(session.blocks, available), duration), goal),
   }
 }
 
@@ -482,6 +534,7 @@ function buildWeek(
   available: EquipmentId[],
   duration: SessionDuration,
   restWeekdays?: number[],
+  goal: Goal = 'general',
 ): WeekPlan {
   const meta = phaseMeta(week, daysPerWeek, duration)
   const trainFactories = scheduleTrainDays(daysPerWeek)
@@ -493,7 +546,7 @@ function buildWeek(
   for (let day = 1; day <= 7; day++) {
     if (trainSet.has(day)) {
       const factory = trainFactories[trainIdx++]!
-      sessions.push(finalize(factory(week, day, level), available, duration))
+      sessions.push(finalize(factory(week, day, level), available, duration, goal))
     } else {
       // User-chosen rest day — full rest (any weekday, not necessarily consecutive)
       sessions.push(recovery(week, day, 'rest'))
@@ -509,9 +562,10 @@ export function buildProgram(
   availableEquipment: EquipmentId[] = [],
   sessionDuration: SessionDuration = 45,
   restWeekdays?: number[],
+  goal: Goal = 'general',
 ): WeekPlan[] {
   return Array.from({ length: 12 }, (_, i) =>
-    buildWeek(i + 1, level, daysPerWeek, availableEquipment, sessionDuration, restWeekdays),
+    buildWeek(i + 1, level, daysPerWeek, availableEquipment, sessionDuration, restWeekdays, goal),
   )
 }
 
